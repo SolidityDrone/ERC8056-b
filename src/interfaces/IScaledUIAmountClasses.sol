@@ -74,7 +74,7 @@ interface IScaledUIAmountClasses {
         uint256 effectiveAtTimestamp
     ) external;
 
-    /// @dev Schedule a relative delta: `newFactor = current × factorDelta / 1e18`.
+    /// @dev Schedule a relative delta: `newFactor = current * factorDelta / 1e18`.
     function applyUIScalingDelta(
         UIScalingClass scalingClass,
         uint256 factorDelta,

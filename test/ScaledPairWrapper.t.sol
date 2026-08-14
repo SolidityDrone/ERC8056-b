@@ -48,8 +48,9 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         vm.stopPrank();
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Helpers                                                                      //
+    //==============================================================================//
     function _applyYieldDelta(uint256 delta, uint256 delay) internal {
         vm.prank(owner);
         underlying.applyUIScalingDelta(UIScalingClass.Yield, delta, block.timestamp + delay);
@@ -91,13 +92,14 @@ contract ScaledPairWrapperTest is ScalingTestBase {
     {
         uint256 capBal = _capital(unlockNonce).balanceOf(user);
         uint256 yldBal = _yield(unlockNonce).balanceOf(user);
-        assertEq(capBal, yldBal); // full pairs only — equal-leg invariant
+        assertEq(capBal, yldBal); // full pairs only - equal-leg invariant
         (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(capBal, unlockNonce);
         assertApproxEqAbs(capOut + yldOut, expected, tolerance);
     }
 
-    // ─── Pair tokens ──────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Pair tokens                                                                  //
+    //==============================================================================//
     function test_pairTokens_createdLazilyOnFirstWrap() public {
         assertEq(wrapper.pairCount(), 0);
         _wrap(alice, RAW_STAKE);
@@ -129,8 +131,9 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         assertEq(wrapper.yieldSupply(), RAW_STAKE);
     }
 
-    // ─── Wrap ─────────────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Wrap                                                                         //
+    //==============================================================================//
     function test_wrap_mintsOneToOne() public {
         uint256 aliceBefore = underlying.balanceOf(alice);
         _wrap(alice, RAW_STAKE);
@@ -146,7 +149,7 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_wrap_mintsOneToOneRegardlessOfFactor() public {
         _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2.0, nonce → 1
+        _applyYieldDelta(DOUBLE, 1 hours); // Y=2.0, nonce -> 1
         _wrap(alice, RAW_STAKE); // pair 1 @ Y=2.0
 
         assertEq(_capital(0).balanceOf(bob), RAW_STAKE);
@@ -177,13 +180,14 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         assertEq(wrapper.yieldSupply(), 0);
     }
 
-    // ─── Capital leg ──────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Capital leg                                                                  //
+    //==============================================================================//
     function test_capitalToken_isOneConstantYieldUIUnit() public {
         _wrap(alice, RAW_STAKE);
 
         assertEq(wrapper.capitalRawValue(RAW_STAKE), RAW_STAKE); // Y=1: 1 raw per token
-        assertEq(wrapper.capitalRawValue(1 ether), NEUTRAL); // raw × Y = 1 Yield-UI unit
+        assertEq(wrapper.capitalRawValue(1 ether), NEUTRAL); // raw * Y = 1 Yield-UI unit
 
         _applyYieldDelta(DOUBLE, 1 hours);
         assertEq(wrapper.capitalRawValue(RAW_STAKE), RAW_STAKE / 2); // Y=2: 0.5 raw per token
@@ -192,7 +196,7 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_capitalTokens_fungibleAcrossWrapTimes() public {
         _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce → 1
+        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce -> 1
         _wrap(alice, RAW_STAKE); // pair 1 @ Y=1.1
 
         // Capital tokens minted in different pairs share one uniform raw value (1/Y).
@@ -203,8 +207,9 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         );
     }
 
-    // ─── Pair-exactness (pool model) ──────────────────────────────────────────
-
+    //==============================================================================//
+    // Pair-exactness (pool model)                                                  //
+    //==============================================================================//
     function test_pairExact_singlePair_yieldDouble() public {
         _wrap(alice, RAW_STAKE); // pair 0
         _applyYieldDelta(DOUBLE, 1 hours);
@@ -248,14 +253,14 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_pairExact_bobAndAlice_differentWrapFactors() public {
         _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce → 1
+        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce -> 1
         _wrap(alice, RAW_STAKE); // pair 1 @ Y=1.1
 
         // Immediately after Alice's wrap, both pairs are exact (1 wei rounding).
         _assertPairExact(bob, 0, RAW_STAKE, 1);
         _assertPairExact(alice, 1, RAW_STAKE, 1);
 
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2.0, nonce → 2
+        _applyYieldDelta(DOUBLE, 1 hours); // Y=2.0, nonce -> 2
         _assertPairExact(bob, 0, RAW_STAKE, 0);
         _assertPairExact(alice, 1, RAW_STAKE, 0);
 
@@ -271,16 +276,16 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_pairExact_threeWraps_differentFactors() public {
         _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce → 1
+        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce -> 1
         _wrap(alice, RAW_STAKE); // pair 1 @ Y=1.1
-        _applyYieldDelta(13e17, 1 hours); // Y=1.3, nonce → 2
+        _applyYieldDelta(13e17, 1 hours); // Y=1.3, nonce -> 2
         _wrap(carol, HALF); // pair 2, 50 @ Y=1.3
 
         _assertPairExact(bob, 0, RAW_STAKE, 1);
         _assertPairExact(alice, 1, RAW_STAKE, 1);
         _assertPairExact(carol, 2, HALF, 1);
 
-        _setYieldFactor(DOUBLE, 1 hours); // absolute: Y=2.0 exactly, nonce → 3
+        _setYieldFactor(DOUBLE, 1 hours); // absolute: Y=2.0 exactly, nonce -> 3
 
         _assertPairExact(bob, 0, RAW_STAKE, 0);
         _assertPairExact(alice, 1, RAW_STAKE, 0);
@@ -303,11 +308,11 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0, S=1.0
 
         _applySupplyDelta(DOUBLE, 1 hours); // split 2-for-1 (nonce unchanged)
-        _applyYieldDelta(15e17, 1 hours); // dividend ×1.5, nonce → 1
+        _applyYieldDelta(15e17, 1 hours); // dividend *1.5, nonce -> 1
         _wrap(alice, RAW_STAKE); // pair 1, mid-stream wrap
-        _applyYieldDelta(DOUBLE, 1 hours); // dividend ×2, nonce → 2
-        _applySupplyDelta(HALF, 1 hours); // reverse split ×0.5 (nonce unchanged)
-        _setYieldFactor(DOUBLE, 1 hours); // absolute: Y=2.0 exactly, nonce → 3
+        _applyYieldDelta(DOUBLE, 1 hours); // dividend *2, nonce -> 2
+        _applySupplyDelta(HALF, 1 hours); // reverse split *0.5 (nonce unchanged)
+        _setYieldFactor(DOUBLE, 1 hours); // absolute: Y=2.0 exactly, nonce -> 3
 
         _assertPairExact(bob, 0, RAW_STAKE, 1);
         _assertPairExact(alice, 1, RAW_STAKE, 1);
@@ -322,11 +327,12 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         assertEq(underlying.balanceOf(alice), 10_000 ether);
     }
 
-    // ─── Yield leg fungibility ────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Yield leg fungibility                                                        //
+    //==============================================================================//
     function test_yieldTokens_fungibleUniformValue() public {
         _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce → 1
+        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce -> 1
         _wrap(alice, RAW_STAKE); // pair 1 @ Y=1.1
 
         uint256 perToken = wrapper.yieldPerTokenRaw();
@@ -342,8 +348,9 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         assertEq(yldOut, Math.mulDiv(RAW_STAKE, wrapper.poolYieldRaw(), wrapper.yieldSupply()));
     }
 
-    // ─── Unwrap rules (equal-leg) ─────────────────────────────────────────────
-
+    //==============================================================================//
+    // Unwrap rules (equal-leg)                                                     //
+    //==============================================================================//
     function test_unwrap_zeroAmount_reverts() public {
         _wrap(alice, RAW_STAKE);
         _applyYieldDelta(DOUBLE, 1 hours);
@@ -402,17 +409,18 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         assertEq(_yield(0).balanceOf(alice), 60 ether);
     }
 
-    // ─── Lock rules (solo unwraps, nonce-gated) ───────────────────────────────
-
+    //==============================================================================//
+    // Lock rules (solo unwraps, nonce-gated)                                       //
+    //==============================================================================//
     function test_wrap_lockZero_pairAtCurrentNonce() public {
-        _wrapLocked(alice, RAW_STAKE, 0); // nonce 0 → pair 0
+        _wrapLocked(alice, RAW_STAKE, 0); // nonce 0 -> pair 0
         assertEq(wrapper.pairCount(), 1);
         assertEq(wrapper.pairNonceAt(0), 0);
         assertEq(_capital(0).balanceOf(alice), RAW_STAKE);
     }
 
     function test_wrap_lockCount_setsUnlockNonce() public {
-        _wrapLocked(alice, RAW_STAKE, 2); // nonce 0 → pair 2
+        _wrapLocked(alice, RAW_STAKE, 2); // nonce 0 -> pair 2
         assertEq(wrapper.pairCount(), 1);
         assertEq(wrapper.pairNonceAt(0), 2);
         assertEq(_capital(2).balanceOf(alice), RAW_STAKE);
@@ -420,9 +428,9 @@ contract ScaledPairWrapperTest is ScalingTestBase {
     }
 
     function test_wrap_lockCount_afterDividends_countsFutureOnly() public {
-        _wrapLocked(alice, RAW_STAKE, 1); // nonce 0 → pair 1
-        _applyYieldDelta(DOUBLE, 1 hours); // nonce → 1: alice's lock is satisfied
-        _wrapLocked(bob, RAW_STAKE, 1); // nonce 1 → pair 2
+        _wrapLocked(alice, RAW_STAKE, 1); // nonce 0 -> pair 1
+        _applyYieldDelta(DOUBLE, 1 hours); // nonce -> 1: alice's lock is satisfied
+        _wrapLocked(bob, RAW_STAKE, 1); // nonce 1 -> pair 2
 
         assertEq(wrapper.pairNonceAt(0), 1);
         assertEq(wrapper.pairNonceAt(1), 2);
@@ -432,7 +440,7 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_unwrapYield_blockedBeforeNonce() public {
         _wrapLocked(alice, RAW_STAKE, 2); // pair 2
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce → 1 < 2
+        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1 < 2
 
         vm.prank(alice);
         vm.expectRevert(ScaledPairWrapper.Locked.selector);
@@ -441,14 +449,14 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_unwrapYield_allowedAtNonce() public {
         _wrapLocked(alice, RAW_STAKE, 2); // pair 2, nonce 0
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce → 1
-        _setYieldFactor(DOUBLE, 1 hours); // Y=2 (absolute), nonce → 2 → unlocked
+        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1
+        _setYieldFactor(DOUBLE, 1 hours); // Y=2 (absolute), nonce -> 2 -> unlocked
 
         uint256 aliceBefore = underlying.balanceOf(alice);
         vm.prank(alice);
         wrapper.unwrapYield(RAW_STAKE, 2);
 
-        // Y=2: yield per token = 0.5 raw → 50 raw out; capital untouched.
+        // Y=2: yield per token = 0.5 raw -> 50 raw out; capital untouched.
         assertEq(underlying.balanceOf(alice), aliceBefore + 50 ether);
         assertEq(wrapper.rawLocked(), 50 ether);
         assertEq(wrapper.capitalSupply(), RAW_STAKE);
@@ -457,7 +465,7 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_unwrapCapital_blockedBeforeNonce() public {
         _wrapLocked(alice, RAW_STAKE, 2); // pair 2
-        _applyYieldDelta(DOUBLE, 1 hours); // nonce → 1 < 2
+        _applyYieldDelta(DOUBLE, 1 hours); // nonce -> 1 < 2
 
         vm.prank(alice);
         vm.expectRevert(ScaledPairWrapper.Locked.selector);
@@ -466,13 +474,13 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_unwrapCapital_allowedAtNonce() public {
         _wrapLocked(alice, RAW_STAKE, 2); // pair 2, nonce 0
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce → 1
-        _setYieldFactor(DOUBLE, 1 hours); // Y=2 (absolute), nonce → 2 → unlocked
+        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1
+        _setYieldFactor(DOUBLE, 1 hours); // Y=2 (absolute), nonce -> 2 -> unlocked
 
         vm.prank(alice);
         wrapper.unwrapCapital(RAW_STAKE, 2);
 
-        // Y=2: capital per token = 0.5 raw → 50 raw out; yield untouched.
+        // Y=2: capital per token = 0.5 raw -> 50 raw out; yield untouched.
         assertEq(underlying.balanceOf(alice), 10_000 ether - RAW_STAKE + 50 ether);
         assertEq(wrapper.rawLocked(), 50 ether);
         assertEq(wrapper.capitalSupply(), 0);
@@ -481,7 +489,7 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_equalLeg_unwrap_anytime_evenWhileLocked() public {
         _wrapLocked(alice, RAW_STAKE, 2); // pair 2
-        _applyYieldDelta(DOUBLE, 1 hours); // nonce → 1, still locked
+        _applyYieldDelta(DOUBLE, 1 hours); // nonce -> 1, still locked
 
         vm.prank(alice);
         wrapper.unwrap(RAW_STAKE, 2); // equal-leg: exact regardless of lock
@@ -520,7 +528,7 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         vm.prank(owner);
         underlying.setUIScalingFactor(UIScalingClass.Yield, 15e17, block.timestamp + 4 days);
 
-        vm.warp(block.timestamp + 2 days); // old "expiry" date passes — still locked, still entitled
+        vm.warp(block.timestamp + 2 days); // old "expiry" date passes - still locked, still entitled
         assertEq(wrapper.currentNonce(), 0);
         vm.prank(alice);
         vm.expectRevert(ScaledPairWrapper.Locked.selector);
@@ -531,14 +539,14 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         vm.prank(alice);
         wrapper.unwrapYield(RAW_STAKE, 1);
 
-        // Y=1.5: yield per token = 1/3 raw → 33.333...e18 raw out.
+        // Y=1.5: yield per token = 1/3 raw -> 33.333...e18 raw out.
         assertEq(underlying.balanceOf(alice), 9900 ether + 33333333333333333334);
     }
 
     function test_yieldPerToken_uniformAcrossPairs() public {
         _wrap(bob, RAW_STAKE); // pair 0
         _wrapLocked(alice, RAW_STAKE, 1); // pair 1
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce → 1
+        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1
 
         (uint256 c0, uint256 y0) = wrapper.previewUnwrap(RAW_STAKE, 0);
         (uint256 c1, uint256 y1) = wrapper.previewUnwrap(RAW_STAKE, 1);
@@ -550,21 +558,21 @@ contract ScaledPairWrapperTest is ScalingTestBase {
     function test_invariant_afterSoloUnwraps() public {
         _wrap(bob, RAW_STAKE); // pair 0
         _wrapLocked(alice, RAW_STAKE, 1); // pair 1
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce → 1
-        _applyYieldDelta(15e17, 1 hours); // Y=3, nonce → 2
+        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1
+        _applyYieldDelta(15e17, 1 hours); // Y=3, nonce -> 2
 
         vm.prank(bob);
         wrapper.unwrapYield(50 ether, 0); // solo yield (nonce 2 >= 0)
         vm.prank(alice);
         wrapper.unwrapCapital(40 ether, 1); // solo capital (nonce 2 >= 1)
 
-        // Invariant: rawLocked == C/Y + YS×(1−1/Y) at Y=3 (1-2 wei rounding drift).
+        // Invariant: rawLocked == C/Y + YS*(1-1/Y) at Y=3 (1-2 wei rounding drift).
         uint256 Y = 3e18;
         uint256 rhs = Math.mulDiv(wrapper.capitalSupply(), 1e18, Y)
             + Math.mulDiv(wrapper.yieldSupply(), Y - 1e18, Y);
         assertApproxEqAbs(wrapper.rawLocked(), rhs, 2);
 
-        // Per-token yield remains uniform = 1 − 1/Y.
+        // Per-token yield remains uniform = 1 - 1/Y.
         assertApproxEqAbs(wrapper.yieldPerTokenRaw(), Math.mulDiv(Y - 1e18, 1e18, Y), 2);
     }
 
@@ -584,8 +592,9 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         wrapper.previewUnwrapCapital(RAW_STAKE, 5);
     }
 
-    // ─── Supply class is display-only ─────────────────────────────────────────
-
+    //==============================================================================//
+    // Supply class is display-only                                                 //
+    //==============================================================================//
     function test_unwrap_supplySplit_doesNotChangeSplit() public {
         _wrap(alice, RAW_STAKE);
         _applySupplyDelta(DOUBLE, 1 hours); // 2-for-1 split
@@ -609,11 +618,12 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         assertEq(yldOut, RAW_STAKE / 2);
     }
 
-    // ─── Factor markdowns ─────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Factor markdowns                                                             //
+    //==============================================================================//
     function test_factorDrop_neverLocksOrPenalizes() public {
         _wrap(alice, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(8e17, 1 hours); // maintainer marks Yield down to 0.8x, nonce → 1
+        _applyYieldDelta(8e17, 1 hours); // maintainer marks Yield down to 0.8x, nonce -> 1
 
         // Supply display is untouched (Yield-class event); redemption is floored at 1:1 raw.
         assertEq(wrapper.previewCapitalUI(RAW_STAKE), RAW_STAKE);
@@ -621,7 +631,7 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         assertEq(wrapper.poolYieldRaw(), 0);
         assertEq(wrapper.yieldPerTokenRaw(), 0);
 
-        // Full pair still redeems exactly the stake — no lock, no penalty.
+        // Full pair still redeems exactly the stake - no lock, no penalty.
         vm.prank(alice);
         wrapper.unwrap(RAW_STAKE, 0);
         assertEq(underlying.balanceOf(alice), 10_000 ether);
@@ -635,10 +645,10 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_factorDrop_afterGrowth_absorbsIntoYield() public {
         _wrap(alice, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(DOUBLE, 1 hours); // dividend to ×2, nonce → 1
-        _applyYieldDelta(4e17, 1 hours); // markdown ×0.4 → Y = 0.8 < 1, nonce → 2
+        _applyYieldDelta(DOUBLE, 1 hours); // dividend to *2, nonce -> 1
+        _applyYieldDelta(4e17, 1 hours); // markdown *0.4 -> Y = 0.8 < 1, nonce -> 2
 
-        // Capital floor keeps redemption at 1:1; the ×2 dividend is unwound.
+        // Capital floor keeps redemption at 1:1; the *2 dividend is unwound.
         assertEq(wrapper.capitalRawValue(RAW_STAKE), RAW_STAKE);
         assertEq(wrapper.poolYieldRaw(), 0);
 
@@ -650,8 +660,8 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_markdown_soloYieldPaysZero() public {
         _wrapLocked(alice, RAW_STAKE, 1); // pair 1
-        _applyYieldDelta(DOUBLE, 1 hours); // nonce → 1 → unlocked
-        _applyYieldDelta(4e17, 1 hours); // markdown → Y = 0.8, nonce → 2
+        _applyYieldDelta(DOUBLE, 1 hours); // nonce -> 1 -> unlocked
+        _applyYieldDelta(4e17, 1 hours); // markdown -> Y = 0.8, nonce -> 2
 
         assertEq(wrapper.poolYieldRaw(), 0);
         vm.prank(alice);
@@ -661,11 +671,12 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         assertEq(wrapper.rawLocked(), RAW_STAKE);
     }
 
-    // ─── Conservation ─────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Conservation                                                                 //
+    //==============================================================================//
     function test_conservation_afterMixedUnwraps() public {
         _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2.0, nonce → 1
+        _applyYieldDelta(DOUBLE, 1 hours); // Y=2.0, nonce -> 1
         _wrap(alice, RAW_STAKE); // pair 1 @ Y=2.0
 
         vm.prank(bob);
@@ -682,8 +693,9 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         assertEq(underlying.balanceOf(address(wrapper)), 40 ether);
     }
 
-    // ─── Events ───────────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Events                                                                       //
+    //==============================================================================//
     function test_events_emitted() public {
         vm.expectEmit(true, true, false, false, address(wrapper));
         emit ScaledPairWrapper.Wrapped(alice, RAW_STAKE, 0);
@@ -700,7 +712,7 @@ contract ScaledPairWrapperTest is ScalingTestBase {
 
     function test_events_soloUnwraps() public {
         _wrapLocked(alice, RAW_STAKE, 1); // pair 1
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce → 1 → unlocked
+        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1 -> unlocked
 
         vm.expectEmit(true, true, false, false, address(wrapper));
         emit ScaledPairWrapper.UnwrapYield(alice, 1, RAW_STAKE, 50 ether);

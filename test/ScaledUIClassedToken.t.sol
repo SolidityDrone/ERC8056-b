@@ -31,8 +31,9 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         vm.warp(effectiveAt);
     }
 
-    // ─── Initial state ────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Initial state                                                                //
+    //==============================================================================//
     function test_initial_neutralSupplyAndYield() public view {
         assertEq(token.uiScalingFactor(UIScalingClass.Supply), NEUTRAL);
         assertEq(token.uiScalingFactor(UIScalingClass.Yield), NEUTRAL);
@@ -53,8 +54,9 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         assertTrue(token.supportsInterface(type(IScaledUIAmountClasses).interfaceId));
     }
 
-    // ─── Order independence ───────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Order independence                                                           //
+    //==============================================================================//
     function test_orderIndependence_yieldThenSupply() public {
         uint256 tYield = _scheduleScalingDelta(UIScalingClass.Yield, DOUBLE, 1 hours);
         uint256 tSupply = _scheduleScalingDelta(UIScalingClass.Supply, DOUBLE, 2 hours);
@@ -100,8 +102,9 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         assertEq(pathA.uiMultiplier(), 4e18);
     }
 
-    // ─── Historical lookups ───────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Historical lookups                                                           //
+    //==============================================================================//
     function test_uiScalingFactorAt_beforeFirstUpdate() public view {
         assertEq(token.uiScalingFactorAt(UIScalingClass.Yield, block.timestamp), NEUTRAL);
         assertEq(token.uiMultiplierAt(block.timestamp), NEUTRAL);
@@ -148,8 +151,9 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         assertEq(token.scalingHistoryLength(UIScalingClass.Yield), 3);
     }
 
-    // ─── Conversion overloads ─────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Conversion overloads                                                         //
+    //==============================================================================//
     function test_toUIAmountAt_compositeHistory() public {
         uint256 tYield = _scheduleScalingDelta(UIScalingClass.Yield, DOUBLE, 1 days);
         _warpToEffective(tYield);
@@ -173,8 +177,9 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         assertEq(token.toUIAmountAt(RAW_STAKE, UIScalingClass.Supply, tYield), RAW_STAKE);
     }
 
-    // ─── Supply class ─────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Supply class                                                                 //
+    //==============================================================================//
     function test_supply_reverseSplitResetsFactor() public {
         _scheduleScalingDelta(UIScalingClass.Supply, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
@@ -193,8 +198,9 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         assertEq(token.uiScalingFactor(UIScalingClass.Supply), DOUBLE);
     }
 
-    // ─── Yield class ──────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Yield class                                                                  //
+    //==============================================================================//
     function test_yield_accretionDoublesUIBalance() public {
         _scheduleScalingDelta(UIScalingClass.Yield, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
@@ -229,8 +235,9 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         );
     }
 
-    // ─── Capital / yield leg math ─────────────────────────────────────────────
-
+    //==============================================================================//
+    // Capital / yield leg math                                                     //
+    //==============================================================================//
     function test_capitalRaw_yieldAccretionReducesPrincipal() public {
         uint256 yieldAtStake = NEUTRAL;
         _scheduleScalingDelta(UIScalingClass.Yield, DOUBLE, 1 hours);
@@ -289,8 +296,9 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         yieldLegRawAmount = UIScalingMath.yieldLegRaw(RAW_STAKE, capitalRawAmount);
     }
 
-    // ─── Year-lock integration scenario ───────────────────────────────────────
-
+    //==============================================================================//
+    // Year-lock integration scenario                                               //
+    //==============================================================================//
     function test_yearLock_mixedActions_orderIndependent() public {
         YearLockSnapshot memory pathA = _runYearLockScenario(_yearLockOrderingA());
         YearLockSnapshot memory pathB = _runYearLockScenario(_yearLockOrderingB());
@@ -396,8 +404,9 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         snapshot.yieldLegRaw = UIScalingMath.yieldLegRaw(RAW_STAKE, snapshot.capitalRaw);
     }
 
-    // ─── Scheduling & reverts ─────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Scheduling & reverts                                                         //
+    //==============================================================================//
     function test_schedule_pendingVisibleBeforeEffective() public {
         uint256 effectiveAt = _scheduleScalingDelta(UIScalingClass.Yield, DOUBLE, 1 days);
         assertTrue(token.hasPendingScalingFactor(UIScalingClass.Yield));
@@ -427,8 +436,9 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         token.setUIScalingFactor(UIScalingClass.Yield, DOUBLE, block.timestamp);
     }
 
-    // ─── Yield nonce (event-based expiry) ─────────────────────────────────────
-
+    //==============================================================================//
+    // Yield nonce (event-based expiry)                                             //
+    //==============================================================================//
     function test_yieldNonce_zeroInitially() public view {
         assertEq(token.yieldNonce(), 0);
     }

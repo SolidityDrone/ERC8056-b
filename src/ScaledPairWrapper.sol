@@ -17,21 +17,21 @@ import {YieldToken} from "./tokens/YieldToken.sol";
  *         pairs, one pair per unlock nonce (yield event). Locks are measured in
  *         dividends, not time, so delayed dividends never expire.
  *
- *   wrap(raw, lockNonces) → unlockNonce = yieldNonce() + lockNonces; mints `raw`
+ *   wrap(raw, lockNonces) -> unlockNonce = yieldNonce() + lockNonces; mints `raw`
  *   Capital + `raw` Yield of the pair unlocking at unlockNonce (1:1 raw).
  *
- *   capital claim (raw) = capitalSupply / max(yieldFactor, 1.0)   → 1 Capital token = 1 Yield-UI unit
- *   yield pool  (raw)   = rawLocked − capital claim               → 1 Yield token = pool / yieldSupply
+ *   capital claim (raw) = capitalSupply / max(yieldFactor, 1.0)   -> 1 Capital token = 1 Yield-UI unit
+ *   yield pool  (raw)   = rawLocked - capital claim               -> 1 Yield token = pool / yieldSupply
  *
  *   Global invariant preserved by every operation:
- *     rawLocked = capitalSupply / Y + yieldSupply × (1 − 1/Y),  Y = max(yieldFactor, 1.0)
- *   ⇒ per-token yield value = 1 − 1/Y is uniform across ALL expiry pairs, and
+ *     rawLocked = capitalSupply / Y + yieldSupply * (1 - 1/Y),  Y = max(yieldFactor, 1.0)
+ *   => per-token yield value = 1 - 1/Y is uniform across ALL expiry pairs, and
  *     equal-leg unwrap of any pair redeems exactly `amount` raw at any time.
  *
  *   Redemption rules:
- *     - unwrap(amount, n)          — burn both legs of pair n, ANYTIME, exact raw.
- *     - unwrapYield(amount, n)     — solo yield leg, only when yieldNonce() >= n.
- *     - unwrapCapital(amount, n)   — solo capital leg, only when yieldNonce() >= n.
+ *     - unwrap(amount, n)          - burn both legs of pair n, ANYTIME, exact raw.
+ *     - unwrapYield(amount, n)     - solo yield leg, only when yieldNonce() >= n.
+ *     - unwrapCapital(amount, n)   - solo capital leg, only when yieldNonce() >= n.
  *   Raw stays pooled while locks are outstanding, so pair unwraps always have liquidity.
  *
  *   The nonce lives in the ERC-8056 extension (effective Yield checkpoints);
@@ -84,8 +84,9 @@ contract ScaledPairWrapper {
         assetSymbol = assetSymbol_;
     }
 
-    // ─── Wrap ──────────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Wrap                                                                         //
+    //==============================================================================//
     /// @notice Lock `rawAmount` underlying and mint 1:1 Capital + Yield of the pair
     ///         unlocking at `yieldNonce() + lockNonces`.
     /// @dev `lockNonces = 0` allows immediate solo redemption (pair of the current nonce).
@@ -117,10 +118,11 @@ contract ScaledPairWrapper {
         emit Wrapped(msg.sender, rawAmount, unlockNonce);
     }
 
-    // ─── Unwrap (equal-leg, anytime) ───────────────────────────────────────
-
+    //==============================================================================//
+    // Unwrap (equal-leg, anytime)                                                  //
+    //==============================================================================//
     /// @notice Burn `amount` of BOTH legs of the pair unlocking at `unlockNonce`.
-    /// @dev Always allowed — the base guarantee. Exact: amount/Y + amount×(1−1/Y) = amount.
+    /// @dev Always allowed - the base guarantee. Exact: amount/Y + amount*(1-1/Y) = amount.
     function unwrap(uint256 amount, uint256 unlockNonce) external {
         if (amount == 0) revert InvalidAmount();
         Pair storage pair = _requirePair(unlockNonce);
@@ -136,9 +138,10 @@ contract ScaledPairWrapper {
         emit Unwrapped(msg.sender, unlockNonce, amount, capitalRawOut, yieldLegRawOut);
     }
 
-    // ─── Unwrap (solo legs, nonce-gated) ───────────────────────────────────
-
-    /// @notice Burn `amount` yield tokens of pair `unlockNonce` and receive raw —
+    //==============================================================================//
+    // Unwrap (solo legs, nonce-gated)                                              //
+    //==============================================================================//
+    /// @notice Burn `amount` yield tokens of pair `unlockNonce` and receive raw -
     ///         only after `yieldNonce() >= unlockNonce`.
     function unwrapYield(uint256 amount, uint256 unlockNonce) external {
         if (amount == 0) revert InvalidAmount();
@@ -156,7 +159,7 @@ contract ScaledPairWrapper {
         emit UnwrapYield(msg.sender, unlockNonce, amount, rawOut);
     }
 
-    /// @notice Burn `amount` capital tokens of pair `unlockNonce` and receive raw —
+    /// @notice Burn `amount` capital tokens of pair `unlockNonce` and receive raw -
     ///         only after `yieldNonce() >= unlockNonce`.
     function unwrapCapital(uint256 amount, uint256 unlockNonce) external {
         if (amount == 0) revert InvalidAmount();
@@ -172,9 +175,10 @@ contract ScaledPairWrapper {
         emit UnwrapCapital(msg.sender, unlockNonce, amount, rawOut);
     }
 
-    // ─── Views ─────────────────────────────────────────────────────────────
-
-    /// @dev Current yield nonce (effective dividend count) — delegated to the extension.
+    //==============================================================================//
+    // Views                                                                        //
+    //==============================================================================//
+    /// @dev Current yield nonce (effective dividend count) - delegated to the extension.
     function currentNonce() public view returns (uint256) {
         return scaledUnderlying.yieldNonce();
     }
@@ -241,7 +245,7 @@ contract ScaledPairWrapper {
         return rawLocked - capitalClaim;
     }
 
-    /// @dev Raw value of one yield token (18-decimal fixed point) — uniform across ALL pairs.
+    /// @dev Raw value of one yield token (18-decimal fixed point) - uniform across ALL pairs.
     function yieldPerTokenRaw() public view returns (uint256) {
         uint256 supply = yieldSupply();
         if (supply == 0) return 0;
@@ -279,8 +283,9 @@ contract ScaledPairWrapper {
         return Math.mulDiv(capitalAmount, supplyFactorNow, UIScalingMath.MULTIPLIER_DECIMALS);
     }
 
-    // ─── Internals ─────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Internals                                                                    //
+    //==============================================================================//
     function _previewUnwrap(Pair storage pair, uint256 amount)
         internal
         view

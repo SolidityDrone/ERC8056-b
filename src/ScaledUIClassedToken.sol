@@ -69,8 +69,9 @@ contract ScaledUIClassedToken is
             super.supportsInterface(interfaceId);
     }
 
-    // ─── Class reads ────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Class reads                                                                  //
+    //==============================================================================//
     function uiScalingFactor(UIScalingClass scalingClass) public view override returns (uint256) {
         return uiScalingFactorAt(scalingClass, block.timestamp);
     }
@@ -155,8 +156,9 @@ contract ScaledUIClassedToken is
         return YieldEvent(history[index].effectiveAt, history[index].cumulativeFactor);
     }
 
-    // ─── Class writes (enum required — no generic update) ───────────────────
-
+    //==============================================================================//
+    // Class writes (enum required - no generic update)                             //
+    //==============================================================================//
     function setUIScalingFactor(
         UIScalingClass scalingClass,
         uint256 newFactor,
@@ -205,8 +207,9 @@ contract ScaledUIClassedToken is
         emit UIMultiplierUpdated(oldComposite, _compositeFromPending(), effectiveAtTimestamp);
     }
 
-    // ─── ERC-8056 composite ─────────────────────────────────────────────────
-
+    //==============================================================================//
+    // ERC-8056 composite                                                           //
+    //==============================================================================//
     function uiMultiplier() public view override returns (uint256) {
         return uiMultiplierAt(block.timestamp);
     }
@@ -231,8 +234,9 @@ contract ScaledUIClassedToken is
         return found ? earliest : 0;
     }
 
-    // ─── Conversion ─────────────────────────────────────────────────────────
-
+    //==============================================================================//
+    // Conversion                                                                   //
+    //==============================================================================//
     function toUIAmount(uint256 rawAmount) public view override returns (uint256) {
         return UIScalingMath.toUIAmount(rawAmount, uiMultiplier());
     }
