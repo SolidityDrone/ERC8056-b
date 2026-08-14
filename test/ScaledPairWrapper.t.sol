@@ -8,7 +8,6 @@ import {YieldToken} from "../src/tokens/YieldToken.sol";
 import {ScaledUIClassedToken} from "../src/ScaledUIClassedToken.sol";
 import {UIScalingClass} from "../src/interfaces/UIScalingClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract ScaledPairWrapperTest is ScalingTestBase {
@@ -37,15 +36,12 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         vm.prank(owner);
         underlying.mint(carol, 10_000 ether);
 
-        vm.startPrank(alice);
-        underlying.approve(address(wrapper), type(uint256).max);
-        vm.stopPrank();
-        vm.startPrank(bob);
-        underlying.approve(address(wrapper), type(uint256).max);
-        vm.stopPrank();
-        vm.startPrank(carol);
-        underlying.approve(address(wrapper), type(uint256).max);
-        vm.stopPrank();
+        for (uint256 i = 0; i < 3; i++) {
+            address user = i == 0 ? alice : (i == 1 ? bob : carol);
+            vm.startPrank(user);
+            underlying.approve(address(wrapper), type(uint256).max);
+            vm.stopPrank();
+        }
     }
 
     //==============================================================================//
@@ -69,659 +65,545 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         vm.warp(block.timestamp + delay);
     }
 
-    function _wrap(address user, uint256 amount) internal {
-        _wrapLocked(user, amount, 0);
+    /// @dev A yield event that does not change the multiplier (advances the nonce only).
+    function _advanceNonce(uint256 delay) internal {
+        _applyYieldDelta(NEUTRAL, delay);
     }
 
-    function _wrapLocked(address user, uint256 amount, uint256 lockNonces) internal {
+    function _wrap(address user, uint256 amount) internal returns (uint256 start, uint256 target) {
         vm.prank(user);
-        wrapper.wrap(amount, lockNonces);
+        (start, target) = wrapper.wrap(amount, 0);
     }
 
-    function _capital(uint256 unlockNonce) internal view returns (CapitalToken) {
-        return CapitalToken(address(wrapper.pairs(unlockNonce).capital));
+    function _wrapLocked(address user, uint256 amount, uint256 lockNonces)
+        internal
+        returns (uint256 start, uint256 target)
+    {
+        vm.prank(user);
+        (start, target) = wrapper.wrap(amount, lockNonces);
     }
 
-    function _yield(uint256 unlockNonce) internal view returns (YieldToken) {
-        return YieldToken(address(wrapper.pairs(unlockNonce).yield));
+    function _capital(uint256 start, uint256 target) internal view returns (CapitalToken) {
+        return CapitalToken(address(wrapper.pairs(start, target).capital));
     }
 
-    function _assertPairExact(address user, uint256 unlockNonce, uint256 expected, uint256 tolerance)
+    function _yield(uint256 start, uint256 target) internal view returns (YieldToken) {
+        return YieldToken(address(wrapper.pairs(start, target).yield));
+    }
+
+    function _assertPairExact(address user, uint256 start, uint256 target, uint256 expected)
         internal
         view
     {
-        uint256 capBal = _capital(unlockNonce).balanceOf(user);
-        uint256 yldBal = _yield(unlockNonce).balanceOf(user);
+        uint256 capBal = _capital(start, target).balanceOf(user);
+        uint256 yldBal = _yield(start, target).balanceOf(user);
         assertEq(capBal, yldBal); // full pairs only - equal-leg invariant
-        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(capBal, unlockNonce);
-        assertApproxEqAbs(capOut + yldOut, expected, tolerance);
+        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(capBal, start, target);
+        assertEq(capOut + yldOut, expected);
     }
 
     //==============================================================================//
     // Pair tokens                                                                  //
     //==============================================================================//
-    function test_pairTokens_createdLazilyOnFirstWrap() public {
-        assertEq(wrapper.pairCount(), 0);
-        _wrap(alice, RAW_STAKE);
+    function test_pairTokens_createdLazily_withWindowNames() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 2); // pair (1,3)
+        assertEq(start, 1);
+        assertEq(target, 3);
 
-        assertEq(wrapper.pairCount(), 1);
-        assertEq(wrapper.pairNonceAt(0), 0);
-        assertEq(_capital(0).name(), "Capital-0");
-        assertEq(_capital(0).symbol(), "Cap0");
-        assertEq(_yield(0).name(), "Yield-0");
-        assertEq(_yield(0).symbol(), "Yld0");
-        assertEq(_capital(0).decimals(), 18);
-        assertEq(_yield(0).decimals(), 18);
-        assertEq(wrapper.capitalSupply(), RAW_STAKE);
-        assertEq(wrapper.yieldSupply(), RAW_STAKE);
-        assertEq(wrapper.rawLocked(), RAW_STAKE);
+        assertEq(_capital(1, 3).name(), "Capital-1-3");
+        assertEq(_capital(1, 3).symbol(), "Cap1-3");
+        assertEq(_yield(1, 3).name(), "Yield-1-3");
+        assertEq(_yield(1, 3).symbol(), "Yld1-3");
+
+        // re-wrap into the same window merges fungibly (same token addresses)
+        (uint256 s2, uint256 t2) = _wrapLocked(bob, RAW_STAKE, 2);
+        assertEq(s2, 1);
+        assertEq(t2, 3);
+        assertEq(address(_capital(1, 3)), address(_capital(s2, t2)));
+        assertEq(_capital(1, 3).balanceOf(bob), RAW_STAKE);
     }
 
-    function test_tokens_areTransferableErc20() public {
-        _wrap(alice, RAW_STAKE);
+    function test_pairTokens_distinctWindowsDistinctTokens() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        _setYieldFactor(3e18, 1 days); // nonce 3, Y = 3x
 
-        vm.startPrank(alice);
-        _capital(0).transfer(bob, 25 ether);
-        _yield(0).transfer(bob, 25 ether);
-        vm.stopPrank();
+        _wrapLocked(alice, RAW_STAKE, 2); // pair (1,3)
+        _advanceNonce(1 days); // nonce 4
+        _wrapLocked(bob, RAW_STAKE, 2); // pair (4,6)
 
-        assertEq(_capital(0).balanceOf(bob), 25 ether);
-        assertEq(_yield(0).balanceOf(bob), 25 ether);
-        assertEq(wrapper.capitalSupply(), RAW_STAKE);
-        assertEq(wrapper.yieldSupply(), RAW_STAKE);
+        assertTrue(address(_capital(1, 3)) != address(_capital(4, 6)));
+        assertTrue(address(_yield(1, 3)) != address(_yield(4, 6)));
+        assertEq(wrapper.pairCount(), 2);
+    }
+
+    function test_pairEnumeration_pairCountAndPairAt() public {
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1)
+        _advanceNonce(1 days); // nonce 1
+        _wrapLocked(bob, RAW_STAKE, 2); // pair (1,3)
+
+        assertEq(wrapper.pairCount(), 2);
+        (uint256 s0, uint256 t0) = wrapper.pairAt(0);
+        (uint256 s1, uint256 t1) = wrapper.pairAt(1);
+        assertEq(s0, 0);
+        assertEq(t0, 1);
+        assertEq(s1, 1);
+        assertEq(t1, 3);
     }
 
     //==============================================================================//
-    // Wrap                                                                         //
+    // Wrap                                                                          //
     //==============================================================================//
     function test_wrap_mintsOneToOne() public {
-        uint256 aliceBefore = underlying.balanceOf(alice);
-        _wrap(alice, RAW_STAKE);
-
-        assertEq(_capital(0).balanceOf(alice), RAW_STAKE);
-        assertEq(_yield(0).balanceOf(alice), RAW_STAKE);
-        assertEq(wrapper.capitalSupply(), RAW_STAKE);
-        assertEq(wrapper.yieldSupply(), RAW_STAKE);
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 2);
+        assertEq(_capital(start, target).balanceOf(alice), RAW_STAKE);
+        assertEq(_yield(start, target).balanceOf(alice), RAW_STAKE);
         assertEq(wrapper.rawLocked(), RAW_STAKE);
-        assertEq(underlying.balanceOf(alice), aliceBefore - RAW_STAKE);
         assertEq(underlying.balanceOf(address(wrapper)), RAW_STAKE);
     }
 
-    function test_wrap_mintsOneToOneRegardlessOfFactor() public {
-        _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2.0, nonce -> 1
-        _wrap(alice, RAW_STAKE); // pair 1 @ Y=2.0
+    function test_wrap_capturesStartNonce() public {
+        _advanceNonce(1 days); // nonce 1
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 5);
+        assertEq(start, wrapper.currentNonce());
+        assertEq(start, 1);
+        assertEq(target, 6);
+    }
 
-        assertEq(_capital(0).balanceOf(bob), RAW_STAKE);
-        assertEq(_yield(0).balanceOf(bob), RAW_STAKE);
-        assertEq(_capital(1).balanceOf(alice), RAW_STAKE);
-        assertEq(_yield(1).balanceOf(alice), RAW_STAKE);
-        assertEq(wrapper.capitalSupply(), 2 * RAW_STAKE);
-        assertEq(wrapper.yieldSupply(), 2 * RAW_STAKE);
-        assertEq(wrapper.pairCount(), 2);
-        assertEq(wrapper.currentNonce(), 1);
+    function test_wrap_lockZero_pairAtCurrentNonce() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 0);
+        assertEq(start, 1);
+        assertEq(target, 1);
+        // degenerate window: coupon 0, capital full
+        assertEq(wrapper.couponOf(1, 1), 0);
+        assertEq(wrapper.capitalShareOf(1, 1), NEUTRAL);
+        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, 1, 1);
+        assertEq(capOut, RAW_STAKE);
+        assertEq(yldOut, 0);
     }
 
     function test_wrap_zeroAmount_reverts() public {
-        vm.prank(alice);
         vm.expectRevert(ScaledPairWrapper.InvalidAmount.selector);
-        wrapper.wrap(0, 0);
+        vm.prank(alice);
+        wrapper.wrap(0, 1);
     }
 
-    function test_wrap_unwrap_anyTime_noTimelock() public {
-        _wrap(alice, RAW_STAKE);
-        vm.warp(block.timestamp + 30 days);
+    function test_unknownPair_operationsRevert() public {
+        vm.expectRevert(ScaledPairWrapper.PairNotFound.selector);
+        wrapper.unwrap(1, 0, 1);
+        vm.expectRevert(ScaledPairWrapper.PairNotFound.selector);
+        wrapper.unwrapYield(1, 0, 1);
+        vm.expectRevert(ScaledPairWrapper.PairNotFound.selector);
+        wrapper.unwrapCapital(1, 0, 1);
+        vm.expectRevert(ScaledPairWrapper.PairNotFound.selector);
+        wrapper.previewUnwrap(1, 0, 1);
+        vm.expectRevert(ScaledPairWrapper.PairNotFound.selector);
+        wrapper.couponOf(0, 1);
+    }
+
+    //==============================================================================//
+    // Delta pricing                                                                //
+    //==============================================================================//
+    function test_coupon_positiveDelta() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        assertEq(wrapper.couponOf(1, 2), 5e17); // 1 - 1/2
+        assertEq(wrapper.capitalShareOf(1, 2), 5e17);
+    }
+
+    function test_coupon_zeroWhenNoDelta() public {
+        _advanceNonce(1 days); // nonce 1
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _advanceNonce(1 days); // nonce 2, Y unchanged
+        assertEq(wrapper.couponOf(1, 2), 0);
+        assertEq(wrapper.capitalShareOf(1, 2), NEUTRAL);
+    }
+
+    function test_coupon_zeroOnMarkdown_principalProtected() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _setYieldFactor(HALF, 1 days); // nonce 2, Y = 0.5x < 1x
+        assertEq(wrapper.couponOf(1, 2), 0);
+        assertEq(wrapper.capitalShareOf(1, 2), NEUTRAL);
+        uint256 rawOut = wrapper.previewUnwrapCapital(RAW_STAKE, 1, 2);
+        assertEq(rawOut, RAW_STAKE); // full principal
+    }
+
+    function test_coupon_usesAbsoluteFactors_notDeltas() public {
+        // Y goes 1x -> 2x -> 1.5x over three events; window (1,3): coupon = 1 - 1/1.5
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 2); // pair (1,3)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        _setYieldFactor(15e17, 1 days); // nonce 3, Y = 1.5x
+        assertEq(wrapper.couponOf(1, 3), 333333333333333333); // 1 - 1/1.5
+        assertEq(wrapper.capitalShareOf(1, 3), 666666666666666667);
+    }
+
+    //==============================================================================//
+    // Equal-leg unwrap                                                             //
+    //==============================================================================//
+    function test_unwrap_equalLeg_anytimeExact() public {
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 2);
+        // BEFORE expiry: exact refund, even though the split is undefined
+        uint256 before = underlying.balanceOf(alice);
         vm.prank(alice);
-        wrapper.unwrap(RAW_STAKE, 0);
+        wrapper.unwrap(RAW_STAKE, start, target);
+        assertEq(underlying.balanceOf(alice) - before, RAW_STAKE);
+        assertEq(wrapper.rawLocked(), 0);
+
+        // AFTER expiry: same exact total
+        (uint256 s2, uint256 t2) = _wrapLocked(bob, RAW_STAKE, 1);
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 1, Y = 2x
+        uint256 before2 = underlying.balanceOf(bob);
+        vm.prank(bob);
+        wrapper.unwrap(RAW_STAKE, s2, t2);
+        assertEq(underlying.balanceOf(bob) - before2, RAW_STAKE);
+    }
+
+    function test_unwrap_equalLeg_paysSplitAtExpiry() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+
+        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, 1, 2);
+        assertEq(capOut, 50 ether);
+        assertEq(yldOut, 50 ether);
+
+        vm.prank(alice);
+        wrapper.unwrap(RAW_STAKE, 1, 2);
+        assertEq(underlying.balanceOf(alice), 10_000 ether); // deposited 100, received 100 back
+        assertEq(wrapper.rawLocked(), 0);
+    }
+
+    function test_unwrap_partialAmount() public {
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 1);
+        vm.prank(alice);
+        wrapper.unwrap(RAW_STAKE / 4, start, target);
+        assertEq(_capital(start, target).balanceOf(alice), 75 ether);
+        assertEq(_yield(start, target).balanceOf(alice), 75 ether);
+        assertEq(wrapper.rawLocked(), 75 ether);
+    }
+
+    //==============================================================================//
+    // Solo legs (nonce-gated, frozen)                                              //
+    //==============================================================================//
+    function test_unwrapYield_gated_beforeTarget() public {
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 2);
+        vm.expectRevert(ScaledPairWrapper.Locked.selector);
+        vm.prank(alice);
+        wrapper.unwrapYield(RAW_STAKE, start, target);
+        _advanceNonce(1 days); // nonce 1, still < target
+        vm.expectRevert(ScaledPairWrapper.Locked.selector);
+        vm.prank(alice);
+        wrapper.unwrapYield(RAW_STAKE, start, target);
+    }
+
+    function test_unwrapCapital_gated_beforeTarget() public {
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 2);
+        vm.expectRevert(ScaledPairWrapper.Locked.selector);
+        vm.prank(alice);
+        wrapper.unwrapCapital(RAW_STAKE, start, target);
+    }
+
+    function test_unwrapYield_paysFrozenCoupon() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        uint256 before = underlying.balanceOf(alice);
+        vm.prank(alice);
+        wrapper.unwrapYield(RAW_STAKE, 1, 2);
+        assertEq(underlying.balanceOf(alice) - before, 50 ether);
+        assertEq(_yield(1, 2).balanceOf(alice), 0);
+        assertEq(_capital(1, 2).balanceOf(alice), RAW_STAKE);
+        assertEq(wrapper.rawLocked(), 50 ether);
+    }
+
+    function test_unwrapCapital_paysFrozenShare() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        uint256 before = underlying.balanceOf(alice);
+        vm.prank(alice);
+        wrapper.unwrapCapital(RAW_STAKE, 1, 2);
+        assertEq(underlying.balanceOf(alice) - before, 50 ether);
+        assertEq(_capital(1, 2).balanceOf(alice), 0);
+        assertEq(_yield(1, 2).balanceOf(alice), RAW_STAKE);
+        assertEq(wrapper.rawLocked(), 50 ether);
+    }
+
+    function test_soloLegs_sequence_totalsExactly() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        vm.prank(alice);
+        wrapper.unwrapYield(RAW_STAKE, 1, 2);
+        vm.prank(alice);
+        wrapper.unwrapCapital(RAW_STAKE, 1, 2);
         assertEq(underlying.balanceOf(alice), 10_000 ether);
-        assertEq(underlying.balanceOf(address(wrapper)), 0);
         assertEq(wrapper.rawLocked(), 0);
-        assertEq(wrapper.capitalSupply(), 0);
-        assertEq(wrapper.yieldSupply(), 0);
     }
 
-    //==============================================================================//
-    // Capital leg                                                                  //
-    //==============================================================================//
-    function test_capitalToken_isOneConstantYieldUIUnit() public {
-        _wrap(alice, RAW_STAKE);
-
-        assertEq(wrapper.capitalRawValue(RAW_STAKE), RAW_STAKE); // Y=1: 1 raw per token
-        assertEq(wrapper.capitalRawValue(1 ether), NEUTRAL); // raw * Y = 1 Yield-UI unit
-
-        _applyYieldDelta(DOUBLE, 1 hours);
-        assertEq(wrapper.capitalRawValue(RAW_STAKE), RAW_STAKE / 2); // Y=2: 0.5 raw per token
-        assertEq(wrapper.capitalRawValue(1 ether) * DOUBLE / 1e18, NEUTRAL); // still 1 UI unit
-    }
-
-    function test_capitalTokens_fungibleAcrossWrapTimes() public {
-        _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce -> 1
-        _wrap(alice, RAW_STAKE); // pair 1 @ Y=1.1
-
-        // Capital tokens minted in different pairs share one uniform raw value (1/Y).
-        assertEq(wrapper.capitalRawValue(RAW_STAKE), Math.mulDiv(RAW_STAKE, 1e18, 11e17));
-        assertEq(
-            wrapper.capitalRawValue(_capital(0).balanceOf(bob)),
-            wrapper.capitalRawValue(_capital(1).balanceOf(alice))
-        );
-    }
-
-    //==============================================================================//
-    // Pair-exactness (pool model)                                                  //
-    //==============================================================================//
-    function test_pairExact_singlePair_yieldDouble() public {
-        _wrap(alice, RAW_STAKE); // pair 0
-        _applyYieldDelta(DOUBLE, 1 hours);
-
-        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, 0);
-        assertEq(capOut, RAW_STAKE / 2);
-        assertEq(yldOut, RAW_STAKE / 2);
-
-        uint256 aliceBefore = underlying.balanceOf(alice);
+    function test_soloLegs_partial_roundingDust() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        // odd amount with coupon 0.5: floor(33 * 5e17 / 1e18) = 16 per leg
+        uint256 amount = 33;
         vm.prank(alice);
-        wrapper.unwrap(RAW_STAKE, 0);
-
-        assertEq(underlying.balanceOf(alice), aliceBefore + RAW_STAKE);
-        assertEq(underlying.balanceOf(address(wrapper)), 0);
-        assertEq(wrapper.rawLocked(), 0);
-        assertEq(wrapper.capitalSupply(), 0);
-        assertEq(wrapper.yieldSupply(), 0);
+        wrapper.unwrapYield(amount, 1, 2); // pays 16
+        vm.prank(alice);
+        wrapper.unwrapCapital(amount, 1, 2); // pays 16
+        assertEq(underlying.balanceOf(alice), 10_000 ether - RAW_STAKE + 32);
+        assertEq(wrapper.rawLocked(), RAW_STAKE - 32);
     }
 
-    function test_pairExact_singlePair_intermediateFactor() public {
-        _wrap(alice, RAW_STAKE); // pair 0
-        _applyYieldDelta(15e17, 1 hours); // Y=1.5
+    //==============================================================================//
+    // Frozen claims (the x5 scenario)                                              //
+    //==============================================================================//
+    function test_frozen_atExpiry_laterMultipliersDoNotChangeClaims() public {
+        // Bob wraps 100 at nonce 1 (Y=1x), locked to nonce 3 where Y lands at 2x.
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        (uint256 start, uint256 target) = _wrapLocked(bob, RAW_STAKE, 2); // (1,3)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        _advanceNonce(1 days); // nonce 3, Y = 2x -> target reached
+        assertEq(wrapper.couponOf(1, 3), 5e17);
+        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, 1, 3);
+        assertEq(capOut, 50 ether);
+        assertEq(yldOut, 50 ether);
 
-        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, 0);
-        assertEq(capOut, 66666666666666666666);
-        assertEq(yldOut, 33333333333333333334);
-        assertEq(capOut + yldOut, RAW_STAKE);
+        // Nonce 5: multiplier lands at 5x. Claims MUST NOT change.
+        _advanceNonce(1 days); // nonce 4, Y = 2x
+        _setYieldFactor(5e18, 1 days); // nonce 5, Y = 5x
+        assertEq(wrapper.couponOf(1, 3), 5e17, "yield frozen at expiry");
+        assertEq(wrapper.capitalShareOf(1, 3), 5e17, "capital frozen at expiry");
+        (uint256 capOut2, uint256 yldOut2) = wrapper.previewUnwrap(RAW_STAKE, 1, 3);
+        assertEq(capOut2, 50 ether);
+        assertEq(yldOut2, 50 ether);
+
+        // Unwrapping months later pays the frozen split.
+        uint256 before = underlying.balanceOf(bob);
+        vm.prank(bob);
+        wrapper.unwrap(RAW_STAKE, 1, 3);
+        assertEq(underlying.balanceOf(bob) - before, RAW_STAKE);
     }
 
-    function test_pairExact_singlePair_neutralYield() public {
-        _wrap(alice, RAW_STAKE); // pair 0
+    function test_frozen_laterDividendsOnlyAffectLaterPairs() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        _advanceNonce(1 days); // nonce 3, Y = 2x
+        _wrapLocked(bob, RAW_STAKE, 2); // pair (3,5)
+        _advanceNonce(1 days); // nonce 4, Y = 2x
+        _setYieldFactor(5e18, 1 days); // nonce 5, Y = 5x
+        assertEq(wrapper.couponOf(3, 5), 1e18 - 2e18 * 1e18 / 5e18); // 1 - 2/5 = 0.6
+        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, 3, 5);
+        assertEq(capOut, 40 ether);
+        assertEq(yldOut, 60 ether);
+    }
 
-        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, 0);
+    function test_frozen_historicalIndependence() public {
+        // Same pair redeems identically at expiry and after more dividends.
+        _advanceNonce(1 days); // nonce 1
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        uint256 yldAtExpiry = wrapper.previewUnwrapYield(RAW_STAKE, 1, 2);
+        assertEq(yldAtExpiry, 50 ether);
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 3, Y = 4x
+        _setYieldFactor(10e18, 1 days); // nonce 4, Y = 10x
+        assertEq(wrapper.previewUnwrapYield(RAW_STAKE, 1, 2), yldAtExpiry);
+        assertEq(wrapper.previewUnwrapCapital(RAW_STAKE, 1, 2), 50 ether);
+    }
+
+    //==============================================================================//
+    // Pending dividends                                                            //
+    //==============================================================================//
+    function test_pendingDividend_doesNotAffectPricing() public {
+        _advanceNonce(1 days); // nonce 1
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        // schedule but do NOT warp past it
+        vm.prank(owner);
+        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 10 days);
+        assertEq(wrapper.currentNonce(), 1, "pending does not tick the nonce");
+        vm.expectRevert(ScaledPairWrapper.Locked.selector);
+        vm.prank(alice);
+        wrapper.unwrapYield(RAW_STAKE, start, target);
+        vm.warp(block.timestamp + 10 days); // dividend lands -> nonce 2, Y = 2x
+        assertEq(wrapper.currentNonce(), 2);
+        assertEq(wrapper.couponOf(1, 2), 5e17, "landed dividend prices the window");
+    }
+
+    function test_pendingDividend_insideWindow_countsOnLanding() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 2); // pair (1,3)
+        vm.prank(owner);
+        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 5 days);
+        vm.warp(block.timestamp + 5 days); // lands before target: nonce 2, Y = 2x
+        _advanceNonce(1 days); // nonce 3, Y = 2x
+        assertEq(wrapper.couponOf(1, 3), 5e17);
+    }
+
+    //==============================================================================//
+    // Preview & display                                                            //
+    //==============================================================================//
+    function test_previewUnwrap_beforeExpiry_returnsFullToCapital() public {
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 2);
+        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, start, target);
         assertEq(capOut, RAW_STAKE);
         assertEq(yldOut, 0);
-
-        vm.prank(alice);
-        wrapper.unwrap(RAW_STAKE, 0);
-        assertEq(underlying.balanceOf(alice), 10_000 ether);
     }
 
-    function test_pairExact_bobAndAlice_differentWrapFactors() public {
-        _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce -> 1
-        _wrap(alice, RAW_STAKE); // pair 1 @ Y=1.1
-
-        // Immediately after Alice's wrap, both pairs are exact (1 wei rounding).
-        _assertPairExact(bob, 0, RAW_STAKE, 1);
-        _assertPairExact(alice, 1, RAW_STAKE, 1);
-
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2.0, nonce -> 2
-        _assertPairExact(bob, 0, RAW_STAKE, 0);
-        _assertPairExact(alice, 1, RAW_STAKE, 0);
-
-        vm.prank(bob);
-        wrapper.unwrap(RAW_STAKE, 0);
-        vm.prank(alice);
-        wrapper.unwrap(RAW_STAKE, 1);
-
-        assertEq(underlying.balanceOf(address(wrapper)), 0);
-        assertEq(underlying.balanceOf(bob), 10_000 ether);
-        assertEq(underlying.balanceOf(alice), 10_000 ether);
-    }
-
-    function test_pairExact_threeWraps_differentFactors() public {
-        _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce -> 1
-        _wrap(alice, RAW_STAKE); // pair 1 @ Y=1.1
-        _applyYieldDelta(13e17, 1 hours); // Y=1.3, nonce -> 2
-        _wrap(carol, HALF); // pair 2, 50 @ Y=1.3
-
-        _assertPairExact(bob, 0, RAW_STAKE, 1);
-        _assertPairExact(alice, 1, RAW_STAKE, 1);
-        _assertPairExact(carol, 2, HALF, 1);
-
-        _setYieldFactor(DOUBLE, 1 hours); // absolute: Y=2.0 exactly, nonce -> 3
-
-        _assertPairExact(bob, 0, RAW_STAKE, 0);
-        _assertPairExact(alice, 1, RAW_STAKE, 0);
-        _assertPairExact(carol, 2, HALF, 0);
-
-        vm.prank(bob);
-        wrapper.unwrap(RAW_STAKE, 0);
-        vm.prank(alice);
-        wrapper.unwrap(RAW_STAKE, 1);
-        vm.prank(carol);
-        wrapper.unwrap(HALF, 2);
-
-        assertEq(underlying.balanceOf(address(wrapper)), 0);
-        assertEq(underlying.balanceOf(bob), 10_000 ether);
-        assertEq(underlying.balanceOf(alice), 10_000 ether);
-        assertEq(underlying.balanceOf(carol), 10_000 ether);
-    }
-
-    function test_pairExact_throughCorporateActions() public {
-        _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0, S=1.0
-
-        _applySupplyDelta(DOUBLE, 1 hours); // split 2-for-1 (nonce unchanged)
-        _applyYieldDelta(15e17, 1 hours); // dividend *1.5, nonce -> 1
-        _wrap(alice, RAW_STAKE); // pair 1, mid-stream wrap
-        _applyYieldDelta(DOUBLE, 1 hours); // dividend *2, nonce -> 2
-        _applySupplyDelta(HALF, 1 hours); // reverse split *0.5 (nonce unchanged)
-        _setYieldFactor(DOUBLE, 1 hours); // absolute: Y=2.0 exactly, nonce -> 3
-
-        _assertPairExact(bob, 0, RAW_STAKE, 1);
-        _assertPairExact(alice, 1, RAW_STAKE, 1);
-
-        vm.prank(bob);
-        wrapper.unwrap(RAW_STAKE, 0);
-        vm.prank(alice);
-        wrapper.unwrap(RAW_STAKE, 1);
-
-        assertEq(underlying.balanceOf(address(wrapper)), 0);
-        assertEq(underlying.balanceOf(bob), 10_000 ether);
-        assertEq(underlying.balanceOf(alice), 10_000 ether);
-    }
-
-    //==============================================================================//
-    // Yield leg fungibility                                                        //
-    //==============================================================================//
-    function test_yieldTokens_fungibleUniformValue() public {
-        _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(11e17, 1 hours); // Y=1.1, nonce -> 1
-        _wrap(alice, RAW_STAKE); // pair 1 @ Y=1.1
-
-        uint256 perToken = wrapper.yieldPerTokenRaw();
-        assertGt(perToken, 0);
-
-        // Yield tokens minted in different pairs share one uniform per-token value.
-        assertEq(
-            Math.mulDiv(_yield(0).balanceOf(bob), perToken, 1e18),
-            Math.mulDiv(_yield(1).balanceOf(alice), perToken, 1e18)
-        );
-        // And preview matches the exact pool formula (single-rounding).
-        (, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, 0);
-        assertEq(yldOut, Math.mulDiv(RAW_STAKE, wrapper.poolYieldRaw(), wrapper.yieldSupply()));
-    }
-
-    //==============================================================================//
-    // Unwrap rules (equal-leg)                                                     //
-    //==============================================================================//
-    function test_unwrap_zeroAmount_reverts() public {
-        _wrap(alice, RAW_STAKE);
-        _applyYieldDelta(DOUBLE, 1 hours);
-
-        vm.prank(alice);
-        vm.expectRevert(ScaledPairWrapper.InvalidAmount.selector);
-        wrapper.unwrap(0, 0);
-    }
-
-    function test_unwrap_revertsForHolderOfSingleLeg() public {
-        _wrap(alice, RAW_STAKE);
-        _applyYieldDelta(DOUBLE, 1 hours);
-
-        vm.startPrank(alice);
-        _yield(0).transfer(bob, 40 ether);
-        vm.stopPrank();
-
-        // Alice can unwrap only her paired 60 + 60.
-        vm.prank(alice);
-        wrapper.unwrap(60 ether, 0);
-
-        // Bob holds only the yield leg: burning the capital leg reverts.
-        vm.prank(bob);
-        vm.expectRevert(
-            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, bob, 0, 40 ether)
-        );
-        wrapper.unwrap(40 ether, 0);
-
-        // And a zero amount is rejected up front.
-        vm.prank(bob);
-        vm.expectRevert(ScaledPairWrapper.InvalidAmount.selector);
-        wrapper.unwrap(0, 0);
-    }
-
-    function test_unwrap_partial_preservesPerTokenValues() public {
-        _wrap(alice, RAW_STAKE);
-        _applyYieldDelta(DOUBLE, 1 hours);
-
-        vm.prank(alice);
-        wrapper.unwrap(40 ether, 0);
-
-        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(60 ether, 0);
-        assertEq(capOut, 30 ether);
-        assertEq(yldOut, 30 ether);
-
-        // Remaining holders keep per-token values: capital 0.5 raw, yield 0.5 raw.
-        assertEq(wrapper.capitalRawValue(1 ether), HALF);
-        assertEq(wrapper.yieldPerTokenRaw(), HALF);
-        assertEq(underlying.balanceOf(alice), 10_000 ether - RAW_STAKE + 40 ether);
-
-        // Equal-leg burn preserves rawLocked == capitalSupply == yieldSupply.
-        assertEq(wrapper.rawLocked(), 60 ether);
-        assertEq(wrapper.capitalSupply(), 60 ether);
-        assertEq(wrapper.yieldSupply(), 60 ether);
-        assertEq(_capital(0).balanceOf(alice), 60 ether);
-        assertEq(_yield(0).balanceOf(alice), 60 ether);
-    }
-
-    //==============================================================================//
-    // Lock rules (solo unwraps, nonce-gated)                                       //
-    //==============================================================================//
-    function test_wrap_lockZero_pairAtCurrentNonce() public {
-        _wrapLocked(alice, RAW_STAKE, 0); // nonce 0 -> pair 0
-        assertEq(wrapper.pairCount(), 1);
-        assertEq(wrapper.pairNonceAt(0), 0);
-        assertEq(_capital(0).balanceOf(alice), RAW_STAKE);
-    }
-
-    function test_wrap_lockCount_setsUnlockNonce() public {
-        _wrapLocked(alice, RAW_STAKE, 2); // nonce 0 -> pair 2
-        assertEq(wrapper.pairCount(), 1);
-        assertEq(wrapper.pairNonceAt(0), 2);
-        assertEq(_capital(2).balanceOf(alice), RAW_STAKE);
-        assertEq(_yield(2).balanceOf(alice), RAW_STAKE);
-    }
-
-    function test_wrap_lockCount_afterDividends_countsFutureOnly() public {
-        _wrapLocked(alice, RAW_STAKE, 1); // nonce 0 -> pair 1
-        _applyYieldDelta(DOUBLE, 1 hours); // nonce -> 1: alice's lock is satisfied
-        _wrapLocked(bob, RAW_STAKE, 1); // nonce 1 -> pair 2
-
-        assertEq(wrapper.pairNonceAt(0), 1);
-        assertEq(wrapper.pairNonceAt(1), 2);
-        assertEq(_yield(1).balanceOf(alice), RAW_STAKE);
-        assertEq(_yield(2).balanceOf(bob), RAW_STAKE);
-    }
-
-    function test_unwrapYield_blockedBeforeNonce() public {
-        _wrapLocked(alice, RAW_STAKE, 2); // pair 2
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1 < 2
-
-        vm.prank(alice);
-        vm.expectRevert(ScaledPairWrapper.Locked.selector);
-        wrapper.unwrapYield(RAW_STAKE, 2);
-    }
-
-    function test_unwrapYield_allowedAtNonce() public {
-        _wrapLocked(alice, RAW_STAKE, 2); // pair 2, nonce 0
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1
-        _setYieldFactor(DOUBLE, 1 hours); // Y=2 (absolute), nonce -> 2 -> unlocked
-
-        uint256 aliceBefore = underlying.balanceOf(alice);
-        vm.prank(alice);
-        wrapper.unwrapYield(RAW_STAKE, 2);
-
-        // Y=2: yield per token = 0.5 raw -> 50 raw out; capital untouched.
-        assertEq(underlying.balanceOf(alice), aliceBefore + 50 ether);
-        assertEq(wrapper.rawLocked(), 50 ether);
-        assertEq(wrapper.capitalSupply(), RAW_STAKE);
-        assertEq(wrapper.yieldSupply(), 0);
-    }
-
-    function test_unwrapCapital_blockedBeforeNonce() public {
-        _wrapLocked(alice, RAW_STAKE, 2); // pair 2
-        _applyYieldDelta(DOUBLE, 1 hours); // nonce -> 1 < 2
-
-        vm.prank(alice);
-        vm.expectRevert(ScaledPairWrapper.Locked.selector);
-        wrapper.unwrapCapital(RAW_STAKE, 2);
-    }
-
-    function test_unwrapCapital_allowedAtNonce() public {
-        _wrapLocked(alice, RAW_STAKE, 2); // pair 2, nonce 0
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1
-        _setYieldFactor(DOUBLE, 1 hours); // Y=2 (absolute), nonce -> 2 -> unlocked
-
-        vm.prank(alice);
-        wrapper.unwrapCapital(RAW_STAKE, 2);
-
-        // Y=2: capital per token = 0.5 raw -> 50 raw out; yield untouched.
-        assertEq(underlying.balanceOf(alice), 10_000 ether - RAW_STAKE + 50 ether);
-        assertEq(wrapper.rawLocked(), 50 ether);
-        assertEq(wrapper.capitalSupply(), 0);
-        assertEq(wrapper.yieldSupply(), RAW_STAKE);
-    }
-
-    function test_equalLeg_unwrap_anytime_evenWhileLocked() public {
-        _wrapLocked(alice, RAW_STAKE, 2); // pair 2
-        _applyYieldDelta(DOUBLE, 1 hours); // nonce -> 1, still locked
-
-        vm.prank(alice);
-        wrapper.unwrap(RAW_STAKE, 2); // equal-leg: exact regardless of lock
-
-        assertEq(underlying.balanceOf(alice), 10_000 ether);
-        assertEq(wrapper.rawLocked(), 0);
-        assertEq(wrapper.capitalSupply(), 0);
-        assertEq(wrapper.yieldSupply(), 0);
-    }
-
-    function test_pendingDividend_doesNotConsumeLock() public {
-        _wrapLocked(alice, RAW_STAKE, 1); // pair 1, nonce 0
-
-        // Dividend announced for +1 day (pending: nonce still 0).
+    function test_previewSolo_revertsBeforeEffective() public {
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1)
+        // schedule a pending dividend: target nonce recorded but not yet effective
         vm.prank(owner);
-        underlying.setUIScalingFactor(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 days);
-
-        vm.prank(alice);
-        vm.expectRevert(ScaledPairWrapper.Locked.selector);
-        wrapper.unwrapYield(RAW_STAKE, 1);
-
-        // Short lock: expires as soon as the pending dividend lands.
-        vm.warp(block.timestamp + 1 days);
-        vm.prank(alice);
-        wrapper.unwrapYield(RAW_STAKE, 1);
-        assertEq(underlying.balanceOf(alice), 10_000 ether - RAW_STAKE + 50 ether);
+        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 10 days);
+        vm.expectRevert(bytes4(keccak256("EventNotEffective()")));
+        wrapper.previewUnwrapYield(RAW_STAKE, start, target);
+        vm.expectRevert(bytes4(keccak256("EventNotEffective()")));
+        wrapper.previewUnwrapCapital(RAW_STAKE, start, target);
     }
 
-    function test_delayedDividend_lockCapturesLateDividend() public {
-        _wrapLocked(alice, RAW_STAKE, 1); // pair 1: locked until the 1st dividend lands
-
-        // Dividend announced for +2 days...
-        vm.prank(owner);
-        underlying.setUIScalingFactor(UIScalingClass.Yield, 15e17, block.timestamp + 2 days);
-        // ...and delayed to +4 days (pending popped and re-pushed).
-        vm.prank(owner);
-        underlying.setUIScalingFactor(UIScalingClass.Yield, 15e17, block.timestamp + 4 days);
-
-        vm.warp(block.timestamp + 2 days); // old "expiry" date passes - still locked, still entitled
-        assertEq(wrapper.currentNonce(), 0);
-        vm.prank(alice);
-        vm.expectRevert(ScaledPairWrapper.Locked.selector);
-        wrapper.unwrapYield(RAW_STAKE, 1);
-
-        vm.warp(block.timestamp + 2 days); // dividend finally lands
-        assertEq(wrapper.currentNonce(), 1);
-        vm.prank(alice);
-        wrapper.unwrapYield(RAW_STAKE, 1);
-
-        // Y=1.5: yield per token = 1/3 raw -> 33.333...e18 raw out.
-        assertEq(underlying.balanceOf(alice), 9900 ether + 33333333333333333334);
+    function test_previewSolo_revertsWhenTargetNotRecorded() public {
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1), nothing scheduled
+        vm.expectRevert(bytes4(keccak256("EventNotRecorded()")));
+        wrapper.previewUnwrapYield(RAW_STAKE, start, target);
+        vm.expectRevert(bytes4(keccak256("EventNotRecorded()")));
+        wrapper.previewUnwrapCapital(RAW_STAKE, start, target);
     }
 
-    function test_yieldPerToken_uniformAcrossPairs() public {
-        _wrap(bob, RAW_STAKE); // pair 0
-        _wrapLocked(alice, RAW_STAKE, 1); // pair 1
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1
-
-        (uint256 c0, uint256 y0) = wrapper.previewUnwrap(RAW_STAKE, 0);
-        (uint256 c1, uint256 y1) = wrapper.previewUnwrap(RAW_STAKE, 1);
-        assertEq(c0, c1); // capital uniform (1/Y)
-        assertEq(y0, y1); // yield uniform across expiries
-        assertEq(y0, RAW_STAKE / 2);
-    }
-
-    function test_invariant_afterSoloUnwraps() public {
-        _wrap(bob, RAW_STAKE); // pair 0
-        _wrapLocked(alice, RAW_STAKE, 1); // pair 1
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1
-        _applyYieldDelta(15e17, 1 hours); // Y=3, nonce -> 2
-
-        vm.prank(bob);
-        wrapper.unwrapYield(50 ether, 0); // solo yield (nonce 2 >= 0)
-        vm.prank(alice);
-        wrapper.unwrapCapital(40 ether, 1); // solo capital (nonce 2 >= 1)
-
-        // Invariant: rawLocked == C/Y + YS*(1-1/Y) at Y=3 (1-2 wei rounding drift).
-        uint256 Y = 3e18;
-        uint256 rhs = Math.mulDiv(wrapper.capitalSupply(), 1e18, Y)
-            + Math.mulDiv(wrapper.yieldSupply(), Y - 1e18, Y);
-        assertApproxEqAbs(wrapper.rawLocked(), rhs, 2);
-
-        // Per-token yield remains uniform = 1 - 1/Y.
-        assertApproxEqAbs(wrapper.yieldPerTokenRaw(), Math.mulDiv(Y - 1e18, 1e18, Y), 2);
-    }
-
-    function test_unwrapYield_revertsForUnknownPair() public {
-        _wrap(alice, RAW_STAKE); // pair 0
-        vm.prank(alice);
-        vm.expectRevert(ScaledPairWrapper.PairNotFound.selector);
-        wrapper.unwrapYield(RAW_STAKE, 1); // never-created pair
-    }
-
-    function test_preview_revertsForUnknownPair() public {
-        vm.expectRevert(ScaledPairWrapper.PairNotFound.selector);
-        wrapper.previewUnwrap(RAW_STAKE, 5);
-        vm.expectRevert(ScaledPairWrapper.PairNotFound.selector);
-        wrapper.previewUnwrapYield(RAW_STAKE, 5);
-        vm.expectRevert(ScaledPairWrapper.PairNotFound.selector);
-        wrapper.previewUnwrapCapital(RAW_STAKE, 5);
-    }
-
-    //==============================================================================//
-    // Supply class is display-only                                                 //
-    //==============================================================================//
-    function test_unwrap_supplySplit_doesNotChangeSplit() public {
-        _wrap(alice, RAW_STAKE);
-        _applySupplyDelta(DOUBLE, 1 hours); // 2-for-1 split
-
-        assertEq(wrapper.capitalRawValue(RAW_STAKE), RAW_STAKE);
-        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, 0);
-        assertEq(capOut, RAW_STAKE);
-        assertEq(yldOut, 0);
-
-        // Display: capital UI doubles with the split.
-        assertEq(wrapper.previewCapitalUI(RAW_STAKE), 2 * RAW_STAKE);
-    }
-
-    function test_unwrap_supplyThenYield_orderIndependent() public {
-        _wrap(alice, RAW_STAKE);
-        _applySupplyDelta(DOUBLE, 1 hours);
-        _applyYieldDelta(DOUBLE, 1 hours);
-
-        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, 0);
-        assertEq(capOut, RAW_STAKE / 2);
-        assertEq(yldOut, RAW_STAKE / 2);
-    }
-
-    //==============================================================================//
-    // Factor markdowns                                                             //
-    //==============================================================================//
-    function test_factorDrop_neverLocksOrPenalizes() public {
-        _wrap(alice, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(8e17, 1 hours); // maintainer marks Yield down to 0.8x, nonce -> 1
-
-        // Supply display is untouched (Yield-class event); redemption is floored at 1:1 raw.
+    function test_previewCapitalUI_supplyDisplayOnly() public {
+        _advanceNonce(1 days); // nonce 1
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
         assertEq(wrapper.previewCapitalUI(RAW_STAKE), RAW_STAKE);
-        assertEq(wrapper.capitalRawValue(RAW_STAKE), RAW_STAKE);
-        assertEq(wrapper.poolYieldRaw(), 0);
-        assertEq(wrapper.yieldPerTokenRaw(), 0);
-
-        // Full pair still redeems exactly the stake - no lock, no penalty.
-        vm.prank(alice);
-        wrapper.unwrap(RAW_STAKE, 0);
-        assertEq(underlying.balanceOf(alice), 10_000 ether);
-        assertEq(underlying.balanceOf(address(wrapper)), 0);
-
-        // Wrapping remains open after the markdown (pair 1: nonce is 1).
-        _wrap(bob, HALF);
-        assertEq(_capital(1).balanceOf(bob), HALF);
-        assertEq(_yield(1).balanceOf(bob), HALF);
+        _applySupplyDelta(DOUBLE, 1 days); // 2-for-1 split: display doubles
+        assertEq(wrapper.previewCapitalUI(RAW_STAKE), 2 * RAW_STAKE);
+        assertEq(wrapper.previewUnwrapCapital(RAW_STAKE, 1, 2), 50 ether, "raw claim unchanged");
     }
 
-    function test_factorDrop_afterGrowth_absorbsIntoYield() public {
-        _wrap(alice, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(DOUBLE, 1 hours); // dividend to *2, nonce -> 1
-        _applyYieldDelta(4e17, 1 hours); // markdown *0.4 -> Y = 0.8 < 1, nonce -> 2
-
-        // Capital floor keeps redemption at 1:1; the *2 dividend is unwound.
-        assertEq(wrapper.capitalRawValue(RAW_STAKE), RAW_STAKE);
-        assertEq(wrapper.poolYieldRaw(), 0);
-
-        vm.prank(alice);
-        wrapper.unwrap(RAW_STAKE, 0);
-        assertEq(underlying.balanceOf(alice), 10_000 ether);
-        assertEq(underlying.balanceOf(address(wrapper)), 0);
-    }
-
-    function test_markdown_soloYieldPaysZero() public {
-        _wrapLocked(alice, RAW_STAKE, 1); // pair 1
-        _applyYieldDelta(DOUBLE, 1 hours); // nonce -> 1 -> unlocked
-        _applyYieldDelta(4e17, 1 hours); // markdown -> Y = 0.8, nonce -> 2
-
-        assertEq(wrapper.poolYieldRaw(), 0);
-        vm.prank(alice);
-        wrapper.unwrapYield(RAW_STAKE, 1); // pays 0: the markdown was absorbed
-
-        assertEq(underlying.balanceOf(alice), 10_000 ether - RAW_STAKE);
-        assertEq(wrapper.rawLocked(), RAW_STAKE);
+    //==============================================================================//
+    // Supplies                                                                     //
+    //==============================================================================//
+    function test_supplies_globalAndPerPair() public {
+        _advanceNonce(1 days); // nonce 1
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2), 100 + 100
+        _advanceNonce(1 days); // nonce 2
+        _wrapLocked(bob, 2 * RAW_STAKE, 1); // pair (2,3), 200 + 200
+        assertEq(wrapper.capitalSupply(), 300 ether);
+        assertEq(wrapper.yieldSupply(), 300 ether);
+        assertEq(wrapper.capitalSupplyOf(1, 2), RAW_STAKE);
+        assertEq(wrapper.yieldSupplyOf(1, 2), RAW_STAKE);
+        assertEq(wrapper.capitalSupplyOf(2, 3), 2 * RAW_STAKE);
+        assertEq(wrapper.capitalSupplyOf(9, 9), 0, "unknown pair -> 0");
     }
 
     //==============================================================================//
     // Conservation                                                                 //
     //==============================================================================//
-    function test_conservation_afterMixedUnwraps() public {
-        _wrap(bob, RAW_STAKE); // pair 0 @ Y=1.0
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2.0, nonce -> 1
-        _wrap(alice, RAW_STAKE); // pair 1 @ Y=2.0
+    function test_conservation_fullDrain() public {
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1)
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(bob, RAW_STAKE, 2); // pair (1,3)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        _advanceNonce(1 days); // nonce 3
+        _wrapLocked(carol, RAW_STAKE, 1); // pair (3,4)
+        _setYieldFactor(5e18, 1 days); // nonce 4, Y = 5x
 
+        // everyone unwraps equal-leg
+        vm.prank(alice);
+        wrapper.unwrap(RAW_STAKE, 0, 1);
         vm.prank(bob);
-        wrapper.unwrap(60 ether, 0);
+        wrapper.unwrap(RAW_STAKE, 1, 3);
+        vm.prank(carol);
+        wrapper.unwrap(RAW_STAKE, 3, 4);
 
-        assertEq(wrapper.rawLocked(), 140 ether);
-        assertEq(wrapper.capitalSupply(), 140 ether);
-        assertEq(wrapper.yieldSupply(), 140 ether);
+        assertEq(underlying.balanceOf(address(wrapper)), 0);
+        assertEq(wrapper.rawLocked(), 0);
+    }
+
+    function test_conservation_mixedRedemptions() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+
+        // solo yield 60 -> 30 raw; then equal-leg 40 -> 40 raw; then solo capital 60 -> 30 raw
+        vm.prank(alice);
+        wrapper.unwrapYield(60 ether, 1, 2);
+        vm.prank(alice);
+        wrapper.unwrap(40 ether, 1, 2);
+        vm.prank(alice);
+        wrapper.unwrapCapital(60 ether, 1, 2);
+
+        assertEq(underlying.balanceOf(alice), 10_000 ether); // 100 in, 100 out
+        assertEq(wrapper.rawLocked(), 0);
+        assertEq(underlying.balanceOf(address(wrapper)), 0);
+    }
+
+    function test_conservation_multiUser_sharingWindow() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _wrapLocked(bob, RAW_STAKE, 1); // same window
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
 
         vm.prank(alice);
-        wrapper.unwrap(RAW_STAKE, 1);
+        wrapper.unwrapYield(RAW_STAKE, 1, 2); // 50
+        vm.prank(bob);
+        wrapper.unwrapCapital(RAW_STAKE, 1, 2); // 50
 
-        assertEq(wrapper.rawLocked(), 40 ether);
-        assertEq(underlying.balanceOf(address(wrapper)), 40 ether);
+        assertEq(underlying.balanceOf(alice), 10_000 ether - RAW_STAKE + 50 ether);
+        assertEq(underlying.balanceOf(bob), 10_000 ether - RAW_STAKE + 50 ether);
+        assertEq(wrapper.rawLocked(), 100 ether); // both capital(50) + yield(50) remain
+        assertEq(underlying.balanceOf(address(wrapper)), 100 ether);
     }
 
     //==============================================================================//
     // Events                                                                       //
     //==============================================================================//
-    function test_events_emitted() public {
-        vm.expectEmit(true, true, false, false, address(wrapper));
-        emit ScaledPairWrapper.Wrapped(alice, RAW_STAKE, 0);
+    function test_events_wrappedAndUnwrapped() public {
+        _advanceNonce(1 days); // nonce 1
+        vm.expectEmit(true, true, true, true, address(wrapper));
+        emit ScaledPairWrapper.Wrapped(alice, RAW_STAKE, 1, 3);
         vm.prank(alice);
-        wrapper.wrap(RAW_STAKE, 0);
+        wrapper.wrap(RAW_STAKE, 2);
 
-        _applyYieldDelta(DOUBLE, 1 hours);
-
-        vm.expectEmit(true, true, false, false, address(wrapper));
-        emit ScaledPairWrapper.Unwrapped(alice, 0, RAW_STAKE, RAW_STAKE / 2, RAW_STAKE / 2);
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2
+        _advanceNonce(1 days); // nonce 3, Y = 2x
+        vm.expectEmit(true, true, true, true, address(wrapper));
+        emit ScaledPairWrapper.Unwrapped(alice, 1, 3, RAW_STAKE, 50 ether, 50 ether);
         vm.prank(alice);
-        wrapper.unwrap(RAW_STAKE, 0);
+        wrapper.unwrap(RAW_STAKE, 1, 3);
     }
 
-    function test_events_soloUnwraps() public {
-        _wrapLocked(alice, RAW_STAKE, 1); // pair 1
-        _applyYieldDelta(DOUBLE, 1 hours); // Y=2, nonce -> 1 -> unlocked
+    function test_events_unwrapYieldAndCapital() public {
+        _advanceNonce(1 days); // nonce 1
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
 
-        vm.expectEmit(true, true, false, false, address(wrapper));
-        emit ScaledPairWrapper.UnwrapYield(alice, 1, RAW_STAKE, 50 ether);
+        vm.expectEmit(true, true, true, true, address(wrapper));
+        emit ScaledPairWrapper.UnwrapYield(alice, 1, 2, RAW_STAKE, 50 ether);
         vm.prank(alice);
-        wrapper.unwrapYield(RAW_STAKE, 1);
+        wrapper.unwrapYield(RAW_STAKE, 1, 2);
 
-        vm.expectEmit(true, true, false, false, address(wrapper));
-        emit ScaledPairWrapper.UnwrapCapital(alice, 1, RAW_STAKE, 50 ether);
+        vm.expectEmit(true, true, true, true, address(wrapper));
+        emit ScaledPairWrapper.UnwrapCapital(alice, 1, 2, RAW_STAKE, 50 ether);
         vm.prank(alice);
-        wrapper.unwrapCapital(RAW_STAKE, 1);
+        wrapper.unwrapCapital(RAW_STAKE, 1, 2);
+    }
+
+    function test_zeroAmount_reverts_everywhere() public {
+        _advanceNonce(1 days); // nonce 1
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2
+        vm.expectRevert(ScaledPairWrapper.InvalidAmount.selector);
+        vm.prank(alice);
+        wrapper.unwrap(0, 1, 2);
+        vm.expectRevert(ScaledPairWrapper.InvalidAmount.selector);
+        vm.prank(alice);
+        wrapper.unwrapYield(0, 1, 2);
+        vm.expectRevert(ScaledPairWrapper.InvalidAmount.selector);
+        vm.prank(alice);
+        wrapper.unwrapCapital(0, 1, 2);
     }
 }

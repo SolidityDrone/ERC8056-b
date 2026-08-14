@@ -1,0 +1,15 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.24"
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+[invariant]
+# 256 runs x 100 calls = 25,600 random sequences; forge 1.5 defaults to
+# depth 500 (128k calls) which makes the suite take ~20 minutes.
+runs = 256
+depth = 100
