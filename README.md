@@ -6,8 +6,8 @@ decomposition to split an RWA token into **Capital** and **Yield** ERC-20 legs
 with nonce-based (event-based) expiration.
 
 - [`ERC8056`](src/ERC8056.sol) — the base EIP-8056 reference implementation (single composite multiplier).
-- [`ERC8056TokenClasses`](src/ERC8056TokenClasses.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and an append-only checkpoint history that also serves as the yield-event log.
-- [`ERC8056PairWrapper`](src/ERC8056PairWrapper.sol) — a standalone wrapper (WETH-style) that splits raw RWA into per-window `CapitalToken` / `YieldToken` ERC-20 pairs with frozen-delta, nonce-gated redemption.
+- [`ERC8056TokenClasses`](src/ERC8056TokenClasses.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and a per-class checkpoint history that also serves as the yield-event log.
+- [`ERC8056PairWrapper`](src/ERC8056PairWrapper.sol) — a standalone wrapper (WETH-for-ETH-style, i.e. a separate adapter contract rather than folded into the base token) that splits raw RWA into per-window `CapitalToken` / `YieldToken` ERC-20 pairs with frozen-delta, nonce-gated redemption.
 
 ## Why this exists
 
@@ -38,12 +38,14 @@ curl -L https://foundry.paradigm.xyz | bash
 foundryup
 
 # Clone and build
-git clone https://github.com/SolidityDrone/ERC8056-b.git
+git clone --recurse-submodules https://github.com/SolidityDrone/ERC8056-b.git
 cd ERC8056-b
 forge build
 ```
 
-Submodules (`openzeppelin-contracts`, `forge-std`) are fetched on first build.
+If you already cloned without submodules, run `git submodule update --init
+--recursive` before building. Submodules are `openzeppelin-contracts` and
+`forge-std` (declared in `.gitmodules`).
 
 ### Run the tests
 

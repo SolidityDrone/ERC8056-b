@@ -23,8 +23,7 @@ keeps every EIP-8056 function untouched and adds:
   ts)` schedules an absolute factor; `applyUIScalingDelta(class, delta, ts)`
   applies a relative `new = current × delta / 1e18`. Nothing activates before
   `effectiveAt` — a pending update does not move today's multiplier.
-- **An append-only checkpoint history per class.** `scalingCheckpointAt`,
-  `scalingHistoryLength`. Each checkpoint is `{effectiveAt, cumulativeFactor}`.
+- **A checkpoint history per class.** `scalingCheckpointAt`, `scalingHistoryLength`. Each checkpoint is `{effectiveAt, cumulativeFactor}`. Once a checkpoint becomes effective it is permanent; a scheduled-but-not-yet-effective (pending) checkpoint is replaced if rescheduled, so only *landed* events are frozen.
 - **A yield-event log and nonce.** `yieldNonce()` counts effective Yield
   updates; `yieldEventAt(nonce)` returns `{timestamp, multiplier}`. This is the
   backbone of the Capital/Yield split.
@@ -59,7 +58,9 @@ checkpoints with `effectiveAt <= now`, skipping the genesis checkpoint (index 0)
 and any pending (future) updates. `yieldEventAt(nonce)` maps nonce `n` to
 checkpoint index `n` (`1`-based events; genesis is not an event). This means:
 
-- Zero new storage in the extension — the history already *is* the event log.
+- No *additional* storage for the event log — the nonce and events are read
+  straight from the Yield checkpoint history (which exists for scaling anyway),
+  rather than a separate event array.
 - A scheduled-but-not-effective update does **not** consume a nonce.
 - The nonce ticks **only** when a dividend actually lands.
 
@@ -135,15 +136,18 @@ share  = 1 - coupon                      # capital leg pays the rest
 
 Key properties:
 
-- **The current multiplier is never read.** Later dividends price nothing for a
-  window whose target has passed. Unwrapping months later pays the same split.
+- **The current multiplier is never read for pricing.** Later dividends price
+  nothing for a window whose target has passed. (The one exception is
+  `previewCapitalUI`, a display-only helper that reads the *current* Supply
+  factor; redemption payouts never read the current multiplier.) Unwrapping
+  months later pays the same split.
 - **Date-slippage immunity.** A dividend delayed by two weeks just makes the
   target event land two weeks later — the holder is *not* penalized.
 - **Compatibility with delayed UI updates.** Because expiry is a nonce, not a
   timestamp, a late push by the issuer delays maturity instead of destroying the
   claim. This is exactly the "expiry fires before the multiplier updates"
   failure mode, resolved.
-- **Frozen and final.** Checkpoint history is append-only, so
+- **Frozen and final.** Effective checkpoints are permanent, so
   `yieldEventAt(target)` stays readable forever and the payout is deterministic.
 
 ### 2.4 The CA-push / nonce system
@@ -151,9 +155,10 @@ Key properties:
 Because yield arrives as discrete events, the contract must learn *when* an
 event lands. That is the **central authority (CA) push** — the issuer (or a
 designated keeper) calls `applyUIScalingDelta(UIScalingClass.Yield, delta, ts)`
-when a dividend is distributed. The nonce ticks on that push. This is the
-trusted source of truth for "a yield event happened," just as the issuer is the
-source of truth for the UI multiplier itself in EIP-8056.
+when a dividend is distributed. The nonce ticks when that pushed update becomes
+**effective** (its `effectiveAt` is reached), not at the moment of the call.
+This is the trusted source of truth for "a yield event happened," just as the
+issuer is the source of truth for the UI multiplier itself in EIP-8056.
 
 The nonce gives the wrapper a **nonce-to-nonce window reference** — an asset is
 wrapped against `(startNonce, targetNonce)`, so the window is defined by real

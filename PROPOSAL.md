@@ -98,7 +98,8 @@ The decomposition can never drift from the displayed multiplier.
 `yieldNonce()` counts Yield checkpoints with `effectiveAt <= now`, excluding the
 genesis checkpoint and any pending (future) updates. `yieldEventAt(nonce)` maps
 nonce `n` to checkpoint index `n` (1-based events). The nonce is derived from
-history — zero new storage — and ticks only when a dividend actually lands.
+the existing Yield history — no separate event array — and ticks only when a
+dividend actually becomes effective.
 
 ### Wrapper (optional, standalone)
 
@@ -137,8 +138,9 @@ unaffected.
 
 ## Security Considerations
 
-The wrapper's solvency holds by construction (`coupon + share = 1`). Pricing
-reads only historical checkpoints; the current multiplier is never read. The
+The wrapper's solvency holds by construction (`coupon + share = 1`). Redemption
+pricing reads only historical checkpoints; the current multiplier is not read
+for payouts (a display-only helper reads the current Supply factor). The
 central authority (issuer) is the trusted source for `applyUIScalingDelta`, as
 it is for the UI multiplier itself in EIP-8056. See `docs/TECHNICAL.md` for the
 full security and mechanics treatment.

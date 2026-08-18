@@ -7,9 +7,10 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * @title CapitalToken
  * @notice Fungible ERC-20 receipt for the principal leg of a ERC8056PairWrapper pair.
  *
- * One capital token is a claim on one constant Yield-UI unit of principal: its raw
- * value is `1 / yieldFactor(now)` and its Yield-UI value is always 1, independent of
- * when it was minted. This makes tokens from stakes made at different factors fungible.
+ * One capital token of a window is a claim on that window's frozen principal
+ * share (`1 - coupon`, where `coupon = max(1 - Y_start/Y_target, 0)`), priced
+ * from historical checkpoints only. All capital tokens of the same
+ * (start, target) window are fungible with each other.
  *
  * Minted and burned only by the owning wrapper.
  */

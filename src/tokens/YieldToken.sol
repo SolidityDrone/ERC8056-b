@@ -7,9 +7,10 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * @title YieldToken
  * @notice Fungible ERC-20 receipt for the yield leg of a ERC8056PairWrapper pair.
  *
- * One yield token is a claim on `poolYieldRaw / yieldSupply` raw units of the bucket's
- * accrued yield pool. All yield tokens of a bucket share one uniform value, so tokens
- * from stakes made at different factors are fungible.
+ * One yield token of a window is a claim on that window's frozen coupon
+ * (`max(1 - Y_start/Y_target, 0)`), priced from historical checkpoints only and
+ * payable once `yieldNonce() >= target`. All yield tokens of the same
+ * (start, target) window are fungible with each other.
  *
  * Minted and burned only by the owning wrapper.
  */

@@ -34,11 +34,12 @@ Lending, options, and auction protocols work by separating a token's
 - An option writer sells the *yield upside*.
 - An auction sells rights to future distributions.
 
-To split a token into a `CapitalToken` (claims principal, `1 / yieldFactor`) and
-a `YieldToken` (claims the coupon), the contract must know **which part of the
-multiplier change is yield vs supply**. With a single `uiMultiplier`, that split
-is impossible — you cannot attribute a 2x move between principal and yield
-without knowing why it happened.
+To split a token into a `CapitalToken` (claims the frozen principal share) and
+a `YieldToken` (claims the frozen coupon), the contract must know **which part
+of the multiplier change is yield vs supply**, across a specific window. With a
+single `uiMultiplier`, that split is impossible — you cannot attribute a 2x move
+between principal and yield, or freeze a window's payout, without knowing why
+each change happened and when.
 
 On Robinhood-chain stock tokens this is **currently not doable**: the token is a
 black box that only reports a scalar multiplier, with no class attribution and
@@ -47,7 +48,7 @@ no history to price a window against.
 ## The improvement in one sentence
 
 Decompose the multiplier into **named scaling classes** (`Supply`, `Yield`,
-`Other`) with an **append-only checkpoint history**, so the reason for every
+`Other`) with a **per-class checkpoint history**, so the reason for every
 change is visible, on-chain, and priced deterministically.
 
 Once classes exist:
