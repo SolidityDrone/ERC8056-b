@@ -8,7 +8,7 @@ import {UIScalingClass} from "./UIScalingClass.sol";
  *
  * All scaling updates MUST specify a {UIScalingClass}. There is no generic
  * monolithic multiplier update entrypoint. The composite {IScaledUIAmount-uiMultiplier}
- * is always derived as the product of every class factor.
+ * is always derived as the product of every class factor (Supply × Yield × Other).
  */
 interface IScaledUIAmountClasses {
     struct ScalingCheckpoint {

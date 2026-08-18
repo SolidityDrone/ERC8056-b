@@ -89,8 +89,10 @@ contract ScaledUIClassedToken is
     }
 
     function uiMultiplierAt(uint256 timestamp) public view override returns (uint256) {
-        return UIScalingMath.composeSupplyYield(
-            uiScalingFactorAt(UIScalingClass.Supply, timestamp), uiScalingFactorAt(UIScalingClass.Yield, timestamp)
+        return UIScalingMath.composeUiMultiplier(
+            uiScalingFactorAt(UIScalingClass.Supply, timestamp),
+            uiScalingFactorAt(UIScalingClass.Yield, timestamp),
+            uiScalingFactorAt(UIScalingClass.Other, timestamp)
         );
     }
 
@@ -267,8 +269,10 @@ contract ScaledUIClassedToken is
     }
 
     function _compositeFromPending() internal view returns (uint256) {
-        return UIScalingMath.composeSupplyYield(
-            _factorForComposite(UIScalingClass.Supply, true), _factorForComposite(UIScalingClass.Yield, true)
+        return UIScalingMath.composeUiMultiplier(
+            _factorForComposite(UIScalingClass.Supply, true),
+            _factorForComposite(UIScalingClass.Yield, true),
+            _factorForComposite(UIScalingClass.Other, true)
         );
     }
 

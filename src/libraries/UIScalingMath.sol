@@ -11,7 +11,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
  */
 library UIScalingMath {
     uint256 internal constant MULTIPLIER_DECIMALS = 1e18;
-    uint256 internal constant SCALING_CLASS_COUNT = 2;
+    uint256 internal constant SCALING_CLASS_COUNT = 3;
 
     error ZeroFactor();
 
@@ -24,10 +24,16 @@ library UIScalingMath {
         return result;
     }
 
-    function composeSupplyYield(uint256 supplyFactor, uint256 yieldFactor) internal pure returns (uint256) {
+    /// @dev Composite UI multiplier from all three classes: Supply * Yield * Other.
+    function composeUiMultiplier(uint256 supplyFactor, uint256 yieldFactor, uint256 otherFactor)
+        internal
+        pure
+        returns (uint256)
+    {
         uint256[] memory factors = new uint256[](SCALING_CLASS_COUNT);
         factors[0] = supplyFactor;
         factors[1] = yieldFactor;
+        factors[2] = otherFactor;
         return composeFactors(factors);
     }
 

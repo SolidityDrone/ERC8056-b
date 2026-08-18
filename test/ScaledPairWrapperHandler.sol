@@ -16,6 +16,7 @@ contract ScaledPairWrapperHandler is Test {
 
     uint256 public totalDeposited;
     uint256 public totalRedeemed;
+    uint256 public soloRedemptions;
 
     constructor(ScaledUIClassedToken underlying_, ScaledPairWrapper wrapper_, address owner_) {
         underlying = underlying_;
@@ -86,6 +87,7 @@ contract ScaledPairWrapperHandler is Test {
         wrapper.unwrapYield(amount, start, target);
         assertEq(underlying.balanceOf(actor) - before, expected, "yield pays frozen coupon");
         totalRedeemed += expected;
+        soloRedemptions++;
     }
 
     function unwrapCapital(uint256 seed, uint256 pairSeed, uint256 amountSeed) external {
@@ -109,6 +111,7 @@ contract ScaledPairWrapperHandler is Test {
         wrapper.unwrapCapital(amount, start, target);
         assertEq(underlying.balanceOf(actor) - before, expected, "capital pays frozen share");
         totalRedeemed += expected;
+        soloRedemptions++;
     }
 
     function applyYieldDelta(uint256 deltaSeed, uint256 delaySeed) external {
@@ -116,6 +119,22 @@ contract ScaledPairWrapperHandler is Test {
         uint256 delay = bound(delaySeed, 1, 3 days);
         vm.prank(owner);
         underlying.applyUIScalingDelta(UIScalingClass.Yield, delta, block.timestamp + delay);
+        vm.warp(block.timestamp + delay);
+    }
+
+    function applySupplyDelta(uint256 deltaSeed, uint256 delaySeed) external {
+        uint256 delta = bound(deltaSeed, 5e17, 2e18);
+        uint256 delay = bound(delaySeed, 1, 3 days);
+        vm.prank(owner);
+        underlying.applyUIScalingDelta(UIScalingClass.Supply, delta, block.timestamp + delay);
+        vm.warp(block.timestamp + delay);
+    }
+
+    function applyOtherDelta(uint256 deltaSeed, uint256 delaySeed) external {
+        uint256 delta = bound(deltaSeed, 5e17, 2e18);
+        uint256 delay = bound(delaySeed, 1, 3 days);
+        vm.prank(owner);
+        underlying.applyUIScalingDelta(UIScalingClass.Other, delta, block.timestamp + delay);
         vm.warp(block.timestamp + delay);
     }
 }

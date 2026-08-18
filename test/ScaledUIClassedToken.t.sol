@@ -34,19 +34,26 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
     //==============================================================================//
     // Initial state                                                                //
     //==============================================================================//
-    function test_initial_neutralSupplyAndYield() public view {
+    function test_initial_neutralAllClasses() public view {
         assertEq(token.uiScalingFactor(UIScalingClass.Supply), NEUTRAL);
         assertEq(token.uiScalingFactor(UIScalingClass.Yield), NEUTRAL);
+        assertEq(token.uiScalingFactor(UIScalingClass.Other), NEUTRAL);
         assertEq(token.uiMultiplier(), NEUTRAL);
         assertEq(token.balanceOfUI(holder), RAW_STAKE);
         assertEq(token.scalingHistoryLength(UIScalingClass.Supply), 1);
         assertEq(token.scalingHistoryLength(UIScalingClass.Yield), 1);
+        assertEq(token.scalingHistoryLength(UIScalingClass.Other), 1);
     }
 
     function test_initial_genesisCheckpoint() public view {
         IScaledUIAmountClasses.ScalingCheckpoint memory genesis = token.scalingCheckpointAt(UIScalingClass.Supply, 0);
         assertEq(genesis.effectiveAt, 0);
         assertEq(genesis.cumulativeFactor, NEUTRAL);
+
+        IScaledUIAmountClasses.ScalingCheckpoint memory genesisOther =
+            token.scalingCheckpointAt(UIScalingClass.Other, 0);
+        assertEq(genesisOther.effectiveAt, 0);
+        assertEq(genesisOther.cumulativeFactor, NEUTRAL);
     }
 
     function test_initial_supportsClassedInterface() public view {
@@ -229,6 +236,42 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         _warpToEffective(block.timestamp + 1 hours);
 
         assertEq(UIScalingMath.yieldGrowthSinceStake(yieldAtStake, token.uiScalingFactor(UIScalingClass.Yield)), 3e18);
+    }
+
+    //==============================================================================//
+    // Other class                                                                  //
+    //==============================================================================//
+    function test_other_composesIntoMultiplier() public {
+        _scheduleScalingDelta(UIScalingClass.Other, DOUBLE, 1 hours);
+        _warpToEffective(block.timestamp + 1 hours);
+
+        assertEq(token.uiScalingFactor(UIScalingClass.Other), DOUBLE);
+        assertEq(token.uiScalingFactor(UIScalingClass.Supply), NEUTRAL);
+        assertEq(token.uiScalingFactor(UIScalingClass.Yield), NEUTRAL);
+        assertEq(token.uiMultiplier(), DOUBLE);
+        assertEq(token.balanceOfUI(holder), 200 ether);
+    }
+
+    function test_other_multipliesSupplyAndYield() public {
+        _scheduleScalingDelta(UIScalingClass.Supply, DOUBLE, 1 hours);
+        _warpToEffective(block.timestamp + 1 hours);
+        _scheduleScalingDelta(UIScalingClass.Yield, 1.5e18, 1 hours);
+        _warpToEffective(block.timestamp + 1 hours);
+        _scheduleScalingDelta(UIScalingClass.Other, 3e18, 1 hours);
+        _warpToEffective(block.timestamp + 1 hours);
+
+        assertEq(token.uiScalingFactor(UIScalingClass.Supply), DOUBLE);
+        assertEq(token.uiScalingFactor(UIScalingClass.Yield), 1.5e18);
+        assertEq(token.uiScalingFactor(UIScalingClass.Other), 3e18);
+        assertEq(token.uiMultiplier(), 9e18);
+        assertEq(token.balanceOfUI(holder), 900 ether);
+    }
+
+    function test_other_doesNotTickYieldNonce() public {
+        vm.prank(owner);
+        token.setUIScalingFactor(UIScalingClass.Other, DOUBLE, block.timestamp + 1 days);
+        vm.warp(block.timestamp + 1 days);
+        assertEq(token.yieldNonce(), 0);
     }
 
     //==============================================================================//

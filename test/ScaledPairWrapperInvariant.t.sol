@@ -36,7 +36,10 @@ contract ScaledPairWrapperInvariantTest is ScalingTestBase {
                 claims += Math.mulDiv(yldSupply, coupon, 1e18);
                 claims += Math.mulDiv(capSupply, 1e18 - coupon, 1e18);
             } else {
-                claims += capSupply > yldSupply ? capSupply : yldSupply;
+                // Equal-leg unwrap is the only redemption path before the target is
+                // effective; it needs BOTH legs, so only min(cap, yld) units are
+                // claimable (1 raw each). Exact, not an over-estimate.
+                claims += capSupply > yldSupply ? yldSupply : capSupply;
             }
         }
         return claims;
@@ -52,9 +55,9 @@ contract ScaledPairWrapperInvariantTest is ScalingTestBase {
 
     function invariant_ghosts_noClaimsBeyondDeposits() public view {
         // claims == remaining deposits exactly (coupon + share = 1); solo-leg floor
-        // rounding leaves up to 1 wei of dust per redemption, so allow slack of the
-        // pair count times the 8 handler actors (each may redeem each pair once).
-        uint256 dust = wrapper.pairCount() * 8;
+        // rounding leaves <1 wei per solo redemption, and _totalClaims floors each
+        // leg by up to 1 wei. Allow that principled slack, not a magic constant.
+        uint256 dust = handler.soloRedemptions() + wrapper.pairCount() * 2;
         assertLe(_totalClaims(), handler.totalDeposited() - handler.totalRedeemed() + dust, "ghost drift");
     }
 
@@ -71,8 +74,11 @@ contract ScaledPairWrapperInvariantTest is ScalingTestBase {
     }
 
     function invariant_noStuckRaw() public view {
-        // Floor rounding leaves at most 1 wei of raw per solo redemption; with 8
-        // actors redeeming once per pair, slack of pairCount x 8 covers it.
-        assertLe(wrapper.rawLocked() - _totalClaims(), wrapper.pairCount() * 8, "unclaimed raw exceeds dust");
+        // Unclaimed raw is dust from floor rounding: each solo redemption leaves
+        // <1 wei, and _totalClaims floors each leg by up to 1 wei. Bound by the
+        // actual solo-redemption count plus the per-pair claim floor, not a magic
+        // constant.
+        uint256 dust = handler.soloRedemptions() + wrapper.pairCount() * 2;
+        assertLe(wrapper.rawLocked() - _totalClaims(), dust, "unclaimed raw exceeds dust");
     }
 }

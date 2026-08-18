@@ -17,24 +17,31 @@ contract UIScalingMathTest is ScalingTestBase {
         harness = new UIScalingMathHarness();
     }
 
-    function test_composeFactors_neutralSupplyYield() public view {
-        uint256[] memory factors = _supplyYieldFactors(NEUTRAL, NEUTRAL);
+    function test_composeFactors_neutralAllClasses() public view {
+        uint256[] memory factors = _classFactors(NEUTRAL, NEUTRAL, NEUTRAL);
         assertEq(harness.composeFactors(factors), NEUTRAL);
     }
 
     function test_composeFactors_orderIndependent() public view {
-        uint256[] memory supplyFirst = _supplyYieldFactors(DOUBLE, 3e18);
-        uint256[] memory yieldFirst = _supplyYieldFactors(3e18, DOUBLE);
+        uint256[] memory supplyFirst = _classFactors(DOUBLE, 3e18, 1.5e18);
+        uint256[] memory yieldFirst = _classFactors(1.5e18, DOUBLE, 3e18);
+        uint256[] memory otherFirst = _classFactors(3e18, 1.5e18, DOUBLE);
         assertEq(harness.composeFactors(supplyFirst), harness.composeFactors(yieldFirst));
-        assertEq(harness.composeFactors(supplyFirst), 6e18);
+        assertEq(harness.composeFactors(supplyFirst), harness.composeFactors(otherFirst));
+        assertEq(harness.composeFactors(supplyFirst), 9e18);
     }
 
-    function test_composeSupplyYield() public pure {
-        assertEq(UIScalingMath.composeSupplyYield(DOUBLE, 1.5e18), 3e18);
+    function test_composeUiMultiplier() public pure {
+        assertEq(UIScalingMath.composeUiMultiplier(DOUBLE, 1.5e18, 3e18), 9e18);
+        assertEq(UIScalingMath.composeUiMultiplier(DOUBLE, 1.5e18, NEUTRAL), 3e18);
+    }
+
+    function test_composeUiMultiplier_neutralOther() public pure {
+        assertEq(UIScalingMath.composeUiMultiplier(DOUBLE, 1.5e18, NEUTRAL), 3e18);
     }
 
     function test_composeFactors_revertsOnZero() public {
-        uint256[] memory factors = _supplyYieldFactors(NEUTRAL, 0);
+        uint256[] memory factors = _classFactors(NEUTRAL, 0, NEUTRAL);
         vm.expectRevert(UIScalingMath.ZeroFactor.selector);
         harness.composeFactors(factors);
     }
@@ -59,13 +66,14 @@ contract UIScalingMathTest is ScalingTestBase {
         assertEq(UIScalingMath.yieldGrowthSinceStake(NEUTRAL, 3e18), 3e18);
     }
 
-    function _supplyYieldFactors(uint256 supplyFactor, uint256 yieldFactor)
+    function _classFactors(uint256 supplyFactor, uint256 yieldFactor, uint256 otherFactor)
         private
         pure
         returns (uint256[] memory factors)
     {
-        factors = new uint256[](2);
+        factors = new uint256[](3);
         factors[0] = supplyFactor;
         factors[1] = yieldFactor;
+        factors[2] = otherFactor;
     }
 }
