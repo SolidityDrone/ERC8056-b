@@ -6,6 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC8056TokenClasses} from "./interfaces/IERC8056TokenClasses.sol";
+import {IERC8056PairWrapper} from "./interfaces/IERC8056PairWrapper.sol";
 import {UIScalingClass} from "./interfaces/UIScalingClass.sol";
 import {UIScalingMath} from "./libraries/UIScalingMath.sol";
 import {CapitalToken} from "./tokens/CapitalToken.sol";
@@ -31,44 +32,28 @@ import {YieldToken} from "./tokens/YieldToken.sol";
  *     - unwrapYield(amount, s, t)  - solo yield leg, only when yieldNonce() >= t.
  *     - unwrapCapital(amount, s, t)- solo capital leg, only when yieldNonce() >= t.
  *
- *   coupon + share = 1, so every pair's total claim equals its deposit and the
- *   shared vault stays solvent by construction.
+ *  coupon + share = 1, so every pair's total claim equals its deposit and the
+ *  shared vault stays solvent by construction.
+ *
+ *  Implements {IERC8056PairWrapper}; see that interface for the stable
+ *  integration surface protocols code against.
  */
-contract ERC8056PairWrapper {
+contract ERC8056PairWrapper is IERC8056PairWrapper {
     using SafeERC20 for IERC20;
 
-    error InvalidAmount();
-    error Locked();
-    error PairNotFound();
+    IERC20 public immutable override underlying;
+    IERC8056TokenClasses public immutable override scaledUnderlying;
+    string public override assetName;
+    string public override assetSymbol;
 
-    struct Pair {
-        CapitalToken capital;
-        YieldToken yield;
-    }
-
-    IERC20 public immutable underlying;
-    IERC8056TokenClasses public immutable scaledUnderlying;
-    string public assetName;
-    string public assetSymbol;
-
-    uint256 public rawLocked;
+    uint256 public override rawLocked;
 
     /// @dev One Capital/Yield pair per (start, target) window; created lazily.
-    mapping(uint256 => mapping(uint256 => Pair)) internal _pairs;
+    ///      Stored as {IERC8056PairWrapper.Pair} (IERC20 legs); cast to concrete
+    ///      token contracts where mint/burn is needed.
+    mapping(uint256 => mapping(uint256 => IERC8056PairWrapper.Pair)) internal _pairs;
     uint256[] internal _pairStarts;
     uint256[] internal _pairTargets;
-
-    event Wrapped(address indexed user, uint256 rawAmount, uint256 startNonce, uint256 targetNonce);
-    event Unwrapped(
-        address indexed user,
-        uint256 startNonce,
-        uint256 targetNonce,
-        uint256 amount,
-        uint256 capitalRawOut,
-        uint256 yieldLegRawOut
-    );
-    event UnwrapYield(address indexed user, uint256 startNonce, uint256 targetNonce, uint256 amount, uint256 rawOut);
-    event UnwrapCapital(address indexed user, uint256 startNonce, uint256 targetNonce, uint256 amount, uint256 rawOut);
 
     constructor(
         IERC20 underlying_,
@@ -93,7 +78,7 @@ contract ERC8056PairWrapper {
         startNonce = scaledUnderlying.yieldNonce();
         targetNonce = startNonce + lockNonces;
 
-        Pair storage pair = _pairs[startNonce][targetNonce];
+        IERC8056PairWrapper.Pair storage pair = _pairs[startNonce][targetNonce];
         if (address(pair.capital) == address(0)) {
             string memory suffix = string.concat(Strings.toString(startNonce), "-", Strings.toString(targetNonce));
             pair.capital =
@@ -105,8 +90,8 @@ contract ERC8056PairWrapper {
 
         underlying.safeTransferFrom(msg.sender, address(this), rawAmount);
         rawLocked += rawAmount;
-        pair.capital.mint(msg.sender, rawAmount);
-        pair.yield.mint(msg.sender, rawAmount);
+        _capital(pair).mint(msg.sender, rawAmount);
+        _yield(pair).mint(msg.sender, rawAmount);
 
         emit Wrapped(msg.sender, rawAmount, startNonce, targetNonce);
     }
@@ -119,12 +104,12 @@ contract ERC8056PairWrapper {
     ///      effective; before that the whole amount is reported as capital.
     function unwrap(uint256 amount, uint256 startNonce, uint256 targetNonce) external {
         if (amount == 0) revert InvalidAmount();
-        Pair storage pair = _requirePair(startNonce, targetNonce);
+        IERC8056PairWrapper.Pair storage pair = _requirePair(startNonce, targetNonce);
 
         (uint256 capitalRawOut, uint256 yieldLegRawOut) = _previewUnwrap(amount, startNonce, targetNonce);
 
-        pair.capital.burn(msg.sender, amount);
-        pair.yield.burn(msg.sender, amount);
+        _capital(pair).burn(msg.sender, amount);
+        _yield(pair).burn(msg.sender, amount);
         rawLocked -= amount;
 
         underlying.safeTransfer(msg.sender, amount);
@@ -139,12 +124,12 @@ contract ERC8056PairWrapper {
     /// @dev Only after `yieldNonce() >= targetNonce`; payout is frozen at the target multiplier.
     function unwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce) external {
         if (amount == 0) revert InvalidAmount();
-        Pair storage pair = _requirePair(startNonce, targetNonce);
+        IERC8056PairWrapper.Pair storage pair = _requirePair(startNonce, targetNonce);
         if (scaledUnderlying.yieldNonce() < targetNonce) revert Locked();
 
         uint256 coupon = _couponOf(startNonce, targetNonce);
         uint256 rawOut = Math.mulDiv(amount, coupon, UIScalingMath.MULTIPLIER_DECIMALS);
-        pair.yield.burn(msg.sender, amount);
+        _yield(pair).burn(msg.sender, amount);
         rawLocked -= rawOut;
 
         underlying.safeTransfer(msg.sender, rawOut);
@@ -156,12 +141,12 @@ contract ERC8056PairWrapper {
     /// @dev Only after `yieldNonce() >= targetNonce`; payout is frozen at the target multiplier.
     function unwrapCapital(uint256 amount, uint256 startNonce, uint256 targetNonce) external {
         if (amount == 0) revert InvalidAmount();
-        Pair storage pair = _requirePair(startNonce, targetNonce);
+        IERC8056PairWrapper.Pair storage pair = _requirePair(startNonce, targetNonce);
         if (scaledUnderlying.yieldNonce() < targetNonce) revert Locked();
 
         uint256 share = UIScalingMath.MULTIPLIER_DECIMALS - _couponOf(startNonce, targetNonce);
         uint256 rawOut = Math.mulDiv(amount, share, UIScalingMath.MULTIPLIER_DECIMALS);
-        pair.capital.burn(msg.sender, amount);
+        _capital(pair).burn(msg.sender, amount);
         rawLocked -= rawOut;
 
         underlying.safeTransfer(msg.sender, rawOut);
@@ -173,25 +158,40 @@ contract ERC8056PairWrapper {
     // Views
     // ------------------------------------------------------------------
     /// @dev Current yield nonce (effective dividend count) - delegated to the extension.
-    function currentNonce() public view returns (uint256) {
+    function currentNonce() public view override returns (uint256) {
         return scaledUnderlying.yieldNonce();
     }
 
-    function pairCount() public view returns (uint256) {
+    function pairCount() public view override returns (uint256) {
         return _pairStarts.length;
     }
 
-    function pairAt(uint256 index) public view returns (uint256 start, uint256 target) {
+    function pairAt(uint256 index) public view override returns (uint256 start, uint256 target) {
         return (_pairStarts[index], _pairTargets[index]);
     }
 
+    /// @dev True if window (start, target) was ever created.
+    function hasPair(uint256 startNonce, uint256 targetNonce) public view override returns (bool) {
+        return address(_pairs[startNonce][targetNonce].capital) != address(0);
+    }
+
     /// @dev Pair whose tokens unlock at window (start, target); zero addresses if never created.
-    function pairs(uint256 startNonce, uint256 targetNonce) public view returns (Pair memory) {
+    function pairs(uint256 startNonce, uint256 targetNonce) public view override returns (Pair memory) {
         return _pairs[startNonce][targetNonce];
     }
 
+    /// @dev Explicit capital leg of window (start, target); zero address if never created.
+    function capitalToken(uint256 startNonce, uint256 targetNonce) public view override returns (IERC20) {
+        return _pairs[startNonce][targetNonce].capital;
+    }
+
+    /// @dev Explicit yield leg of window (start, target); zero address if never created.
+    function yieldToken(uint256 startNonce, uint256 targetNonce) public view override returns (IERC20) {
+        return _pairs[startNonce][targetNonce].yield;
+    }
+
     /// @dev Total capital supply across all windows.
-    function capitalSupply() public view returns (uint256) {
+    function capitalSupply() public view override returns (uint256) {
         uint256 total;
         for (uint256 i = 0; i < _pairStarts.length; i++) {
             total += _pairs[_pairStarts[i]][_pairTargets[i]].capital.totalSupply();
@@ -200,7 +200,7 @@ contract ERC8056PairWrapper {
     }
 
     /// @dev Total yield supply across all windows.
-    function yieldSupply() public view returns (uint256) {
+    function yieldSupply() public view override returns (uint256) {
         uint256 total;
         for (uint256 i = 0; i < _pairStarts.length; i++) {
             total += _pairs[_pairStarts[i]][_pairTargets[i]].yield.totalSupply();
@@ -208,25 +208,30 @@ contract ERC8056PairWrapper {
         return total;
     }
 
-    function capitalSupplyOf(uint256 startNonce, uint256 targetNonce) public view returns (uint256) {
-        Pair storage pair = _pairs[startNonce][targetNonce];
+    function capitalSupplyOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
+        IERC8056PairWrapper.Pair storage pair = _pairs[startNonce][targetNonce];
         return address(pair.capital) == address(0) ? 0 : pair.capital.totalSupply();
     }
 
-    function yieldSupplyOf(uint256 startNonce, uint256 targetNonce) public view returns (uint256) {
-        Pair storage pair = _pairs[startNonce][targetNonce];
+    function yieldSupplyOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
+        IERC8056PairWrapper.Pair storage pair = _pairs[startNonce][targetNonce];
         return address(pair.yield) == address(0) ? 0 : pair.yield.totalSupply();
+    }
+
+    /// @dev Raw backing of a single window: the staked amount (== capitalSupplyOf).
+    function rawLockedOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
+        return capitalSupplyOf(startNonce, targetNonce);
     }
 
     /// @dev Frozen yield coupon of window (start, target): max(1 - Y_s/Y_t, 0), 1e18 fixed point.
     ///      Reverts EventNotEffective before the target nonce is effective.
-    function couponOf(uint256 startNonce, uint256 targetNonce) public view returns (uint256) {
+    function couponOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
         _requirePair(startNonce, targetNonce);
         return _couponOf(startNonce, targetNonce);
     }
 
     /// @dev Frozen capital share of window (start, target): 1e18 - coupon.
-    function capitalShareOf(uint256 startNonce, uint256 targetNonce) public view returns (uint256) {
+    function capitalShareOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
         return UIScalingMath.MULTIPLIER_DECIMALS - couponOf(startNonce, targetNonce);
     }
 
@@ -236,15 +241,21 @@ contract ERC8056PairWrapper {
     function previewUnwrap(uint256 amount, uint256 startNonce, uint256 targetNonce)
         public
         view
+        override
         returns (uint256 capitalRawOut, uint256 yieldLegRawOut)
     {
-        Pair storage pair = _requirePair(startNonce, targetNonce);
+        _requirePair(startNonce, targetNonce);
         return _previewUnwrap(amount, startNonce, targetNonce);
     }
 
     /// @notice Preview solo yield redemption of `amount` yield tokens of window (start, target).
     /// @dev Reverts EventNotEffective/EventNotRecorded until the target is effective.
-    function previewUnwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce) public view returns (uint256) {
+    function previewUnwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce)
+        public
+        view
+        override
+        returns (uint256)
+    {
         _requirePair(startNonce, targetNonce);
         return Math.mulDiv(amount, _couponOf(startNonce, targetNonce), UIScalingMath.MULTIPLIER_DECIMALS);
     }
@@ -254,6 +265,7 @@ contract ERC8056PairWrapper {
     function previewUnwrapCapital(uint256 amount, uint256 startNonce, uint256 targetNonce)
         public
         view
+        override
         returns (uint256)
     {
         _requirePair(startNonce, targetNonce);
@@ -263,7 +275,7 @@ contract ERC8056PairWrapper {
 
     /// @dev Composite-UI display of `capitalAmount` capital tokens. Supply events (splits)
     ///      scale the display only; the raw claim is untouched.
-    function previewCapitalUI(uint256 capitalAmount) public view returns (uint256) {
+    function previewCapitalUI(uint256 capitalAmount) public view override returns (uint256) {
         uint256 supplyFactorNow = scaledUnderlying.uiScalingFactor(UIScalingClass.Supply);
         return Math.mulDiv(capitalAmount, supplyFactorNow, UIScalingMath.MULTIPLIER_DECIMALS);
     }
@@ -293,8 +305,22 @@ contract ERC8056PairWrapper {
         }
     }
 
-    function _requirePair(uint256 startNonce, uint256 targetNonce) internal view returns (Pair storage pair) {
+    function _requirePair(uint256 startNonce, uint256 targetNonce)
+        internal
+        view
+        returns (IERC8056PairWrapper.Pair storage pair)
+    {
         pair = _pairs[startNonce][targetNonce];
         if (address(pair.capital) == address(0)) revert PairNotFound();
+    }
+
+    /// @dev Concrete capital token of a stored pair (for mint/burn).
+    function _capital(IERC8056PairWrapper.Pair storage pair) internal view returns (CapitalToken) {
+        return CapitalToken(address(pair.capital));
+    }
+
+    /// @dev Concrete yield token of a stored pair (for mint/burn).
+    function _yield(IERC8056PairWrapper.Pair storage pair) internal view returns (YieldToken) {
+        return YieldToken(address(pair.yield));
     }
 }

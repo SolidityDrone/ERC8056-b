@@ -5,4 +5,4 @@ test/Scratch.t.sol
 docs/*
 !docs/MOTIVATION.md
 !docs/TECHNICAL.md
-!docs/PROPOSAL.md
+!docs/INTEGRATION.md

@@ -72,5 +72,6 @@ build on RWA without trusting a single scalar:
   growth" on a token that only publishes UI scaling.
 
 The mechanics — how classes, checkpoint history, and nonce-based expiry produce
-a deterministic, solvent split — are in [TECHNICAL.md](TECHNICAL.md). The formal
-proposal draft is at [PROPOSAL.md](PROPOSAL.md).
+a deterministic, solvent split — are in [TECHNICAL.md](TECHNICAL.md). For
+protocols building on the Capital/Yield split, the wrapper and registry surface
+is documented in [INTEGRATION.md](INTEGRATION.md).

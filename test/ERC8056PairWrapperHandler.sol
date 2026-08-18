@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC8056PairWrapper} from "../src/ERC8056PairWrapper.sol";
+import {IERC8056PairWrapper} from "../src/interfaces/IERC8056PairWrapper.sol";
 import {ERC8056TokenClasses} from "../src/ERC8056TokenClasses.sol";
 import {UIScalingClass} from "../src/interfaces/UIScalingClass.sol";
 
@@ -76,7 +77,7 @@ contract ERC8056PairWrapperHandler is Test {
         uint256 amount = bound(amountSeed, 1, yldBal);
 
         if (wrapper.currentNonce() < target) {
-            vm.expectRevert(ERC8056PairWrapper.Locked.selector);
+            vm.expectRevert(IERC8056PairWrapper.Locked.selector);
             vm.prank(actor);
             wrapper.unwrapYield(amount, start, target);
             return;
@@ -99,7 +100,7 @@ contract ERC8056PairWrapperHandler is Test {
         uint256 amount = bound(amountSeed, 1, capBal);
 
         if (wrapper.currentNonce() < target) {
-            vm.expectRevert(ERC8056PairWrapper.Locked.selector);
+            vm.expectRevert(IERC8056PairWrapper.Locked.selector);
             vm.prank(actor);
             wrapper.unwrapCapital(amount, start, target);
             return;

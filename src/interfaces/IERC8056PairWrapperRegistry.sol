@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC8056TokenClasses} from "./IERC8056TokenClasses.sol";
+import {IERC8056PairWrapper} from "./IERC8056PairWrapper.sol";
+
+/**
+ * @title IERC8056PairWrapperRegistry
+ * @notice Canonical per-asset splitter discovery. Maps a raw RWA token to the ONE
+ *         ERC8056PairWrapper that splits it into Capital / Yield pairs, so every
+ *         protocol integrates against the same, deterministic wrapper per asset.
+ *
+ *   The registry enforces singleton semantics: the first deployOrGet for an
+ *   underlying establishes its canonical wrapper; every later call returns the
+ *   same address. Identity is keyed by `underlying` only.
+ */
+interface IERC8056PairWrapperRegistry {
+    /// @notice Canonical wrapper for `underlying`; zero address if never registered.
+    function wrapperFor(IERC20 underlying) external view returns (IERC8056PairWrapper);
+
+    /// @notice Canonical wrapper for `underlying`, deploying and caching it on first
+    ///         call (idempotent thereafter).
+    /// @param underlying       Raw RWA token (ERC-20).
+    /// @param scaledUnderlying The ERC-8056 class-decomposed extension the wrapper reads
+    ///                         yield history from. Validated via ERC-165.
+    /// @param name             Asset display name (prefixes the Capital/Yield token names).
+    /// @param symbol           Asset display symbol.
+    function deployOrGet(
+        IERC20 underlying,
+        IERC8056TokenClasses scaledUnderlying,
+        string calldata name,
+        string calldata symbol
+    ) external returns (IERC8056PairWrapper);
+
+    /// @notice Number of registered wrappers.
+    function wrapperCount() external view returns (uint256);
+
+    /// @notice Wrapper at `index` (enumerates all registered assets).
+    function wrapperAt(uint256 index) external view returns (IERC8056PairWrapper);
+
+    /// @notice The underlying token for a wrapper (reverse lookup).
+    function underlyingOf(IERC8056PairWrapper wrapper) external view returns (IERC20);
+
+    event PairWrapperDeployed(
+        IERC20 indexed underlying, IERC8056TokenClasses indexed scaledUnderlying, IERC8056PairWrapper wrapper
+    );
+}

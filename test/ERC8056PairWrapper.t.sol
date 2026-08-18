@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
 import {ERC8056PairWrapper} from "../src/ERC8056PairWrapper.sol";
+import {IERC8056PairWrapper} from "../src/interfaces/IERC8056PairWrapper.sol";
 import {CapitalToken} from "../src/tokens/CapitalToken.sol";
 import {YieldToken} from "../src/tokens/YieldToken.sol";
 import {ERC8056TokenClasses} from "../src/ERC8056TokenClasses.sol";
@@ -178,21 +179,21 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
     }
 
     function test_wrap_zeroAmount_reverts() public {
-        vm.expectRevert(ERC8056PairWrapper.InvalidAmount.selector);
+        vm.expectRevert(IERC8056PairWrapper.InvalidAmount.selector);
         vm.prank(alice);
         wrapper.wrap(0, 1);
     }
 
     function test_unknownPair_operationsRevert() public {
-        vm.expectRevert(ERC8056PairWrapper.PairNotFound.selector);
+        vm.expectRevert(IERC8056PairWrapper.PairNotFound.selector);
         wrapper.unwrap(1, 0, 1);
-        vm.expectRevert(ERC8056PairWrapper.PairNotFound.selector);
+        vm.expectRevert(IERC8056PairWrapper.PairNotFound.selector);
         wrapper.unwrapYield(1, 0, 1);
-        vm.expectRevert(ERC8056PairWrapper.PairNotFound.selector);
+        vm.expectRevert(IERC8056PairWrapper.PairNotFound.selector);
         wrapper.unwrapCapital(1, 0, 1);
-        vm.expectRevert(ERC8056PairWrapper.PairNotFound.selector);
+        vm.expectRevert(IERC8056PairWrapper.PairNotFound.selector);
         wrapper.previewUnwrap(1, 0, 1);
-        vm.expectRevert(ERC8056PairWrapper.PairNotFound.selector);
+        vm.expectRevert(IERC8056PairWrapper.PairNotFound.selector);
         wrapper.couponOf(0, 1);
     }
 
@@ -285,18 +286,18 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
     //==============================================================================//
     function test_unwrapYield_gated_beforeTarget() public {
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 2);
-        vm.expectRevert(ERC8056PairWrapper.Locked.selector);
+        vm.expectRevert(IERC8056PairWrapper.Locked.selector);
         vm.prank(alice);
         wrapper.unwrapYield(RAW_STAKE, start, target);
         _advanceNonce(1 days); // nonce 1, still < target
-        vm.expectRevert(ERC8056PairWrapper.Locked.selector);
+        vm.expectRevert(IERC8056PairWrapper.Locked.selector);
         vm.prank(alice);
         wrapper.unwrapYield(RAW_STAKE, start, target);
     }
 
     function test_unwrapCapital_gated_beforeTarget() public {
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 2);
-        vm.expectRevert(ERC8056PairWrapper.Locked.selector);
+        vm.expectRevert(IERC8056PairWrapper.Locked.selector);
         vm.prank(alice);
         wrapper.unwrapCapital(RAW_STAKE, start, target);
     }
@@ -421,7 +422,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         vm.prank(owner);
         underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 10 days);
         assertEq(wrapper.currentNonce(), 1, "pending does not tick the nonce");
-        vm.expectRevert(ERC8056PairWrapper.Locked.selector);
+        vm.expectRevert(IERC8056PairWrapper.Locked.selector);
         vm.prank(alice);
         wrapper.unwrapYield(RAW_STAKE, start, target);
         vm.warp(block.timestamp + 10 days); // dividend lands -> nonce 2, Y = 2x
@@ -559,14 +560,14 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
     function test_events_wrappedAndUnwrapped() public {
         _advanceNonce(1 days); // nonce 1
         vm.expectEmit(true, true, true, true, address(wrapper));
-        emit ERC8056PairWrapper.Wrapped(alice, RAW_STAKE, 1, 3);
+        emit IERC8056PairWrapper.Wrapped(alice, RAW_STAKE, 1, 3);
         vm.prank(alice);
         wrapper.wrap(RAW_STAKE, 2);
 
         _applyYieldDelta(DOUBLE, 1 days); // nonce 2
         _advanceNonce(1 days); // nonce 3, Y = 2x
         vm.expectEmit(true, true, true, true, address(wrapper));
-        emit ERC8056PairWrapper.Unwrapped(alice, 1, 3, RAW_STAKE, 50 ether, 50 ether);
+        emit IERC8056PairWrapper.Unwrapped(alice, 1, 3, RAW_STAKE, 50 ether, 50 ether);
         vm.prank(alice);
         wrapper.unwrap(RAW_STAKE, 1, 3);
     }
@@ -577,12 +578,12 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
 
         vm.expectEmit(true, true, true, true, address(wrapper));
-        emit ERC8056PairWrapper.UnwrapYield(alice, 1, 2, RAW_STAKE, 50 ether);
+        emit IERC8056PairWrapper.UnwrapYield(alice, 1, 2, RAW_STAKE, 50 ether);
         vm.prank(alice);
         wrapper.unwrapYield(RAW_STAKE, 1, 2);
 
         vm.expectEmit(true, true, true, true, address(wrapper));
-        emit ERC8056PairWrapper.UnwrapCapital(alice, 1, 2, RAW_STAKE, 50 ether);
+        emit IERC8056PairWrapper.UnwrapCapital(alice, 1, 2, RAW_STAKE, 50 ether);
         vm.prank(alice);
         wrapper.unwrapCapital(RAW_STAKE, 1, 2);
     }
@@ -591,13 +592,13 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         _advanceNonce(1 days); // nonce 1
         _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
         _applyYieldDelta(DOUBLE, 1 days); // nonce 2
-        vm.expectRevert(ERC8056PairWrapper.InvalidAmount.selector);
+        vm.expectRevert(IERC8056PairWrapper.InvalidAmount.selector);
         vm.prank(alice);
         wrapper.unwrap(0, 1, 2);
-        vm.expectRevert(ERC8056PairWrapper.InvalidAmount.selector);
+        vm.expectRevert(IERC8056PairWrapper.InvalidAmount.selector);
         vm.prank(alice);
         wrapper.unwrapYield(0, 1, 2);
-        vm.expectRevert(ERC8056PairWrapper.InvalidAmount.selector);
+        vm.expectRevert(IERC8056PairWrapper.InvalidAmount.selector);
         vm.prank(alice);
         wrapper.unwrapCapital(0, 1, 2);
     }
@@ -647,10 +648,10 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         wrapper.unwrap(RAW_STAKE / 2, 0, 1);
         assertEq(underlying.balanceOf(alice) - before, RAW_STAKE / 2);
 
-        vm.expectRevert(ERC8056PairWrapper.Locked.selector);
+        vm.expectRevert(IERC8056PairWrapper.Locked.selector);
         vm.prank(alice);
         wrapper.unwrapYield(RAW_STAKE / 2, 0, 1);
-        vm.expectRevert(ERC8056PairWrapper.Locked.selector);
+        vm.expectRevert(IERC8056PairWrapper.Locked.selector);
         vm.prank(alice);
         wrapper.unwrapCapital(RAW_STAKE / 2, 0, 1);
 
