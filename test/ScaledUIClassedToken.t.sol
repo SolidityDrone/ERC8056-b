@@ -44,8 +44,7 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
     }
 
     function test_initial_genesisCheckpoint() public view {
-        IScaledUIAmountClasses.ScalingCheckpoint memory genesis =
-            token.scalingCheckpointAt(UIScalingClass.Supply, 0);
+        IScaledUIAmountClasses.ScalingCheckpoint memory genesis = token.scalingCheckpointAt(UIScalingClass.Supply, 0);
         assertEq(genesis.effectiveAt, 0);
         assertEq(genesis.cumulativeFactor, NEUTRAL);
     }
@@ -138,8 +137,7 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         uint256 tFirst = _scheduleScalingDelta(UIScalingClass.Yield, DOUBLE, 1 days);
         assertEq(token.scalingHistoryLength(UIScalingClass.Yield), 2);
 
-        IScaledUIAmountClasses.ScalingCheckpoint memory first =
-            token.scalingCheckpointAt(UIScalingClass.Yield, 1);
+        IScaledUIAmountClasses.ScalingCheckpoint memory first = token.scalingCheckpointAt(UIScalingClass.Yield, 1);
         assertEq(first.effectiveAt, tFirst);
         assertEq(first.cumulativeFactor, DOUBLE);
 
@@ -230,9 +228,7 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         _scheduleScalingDelta(UIScalingClass.Yield, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
-        assertEq(
-            UIScalingMath.yieldGrowthSinceStake(yieldAtStake, token.uiScalingFactor(UIScalingClass.Yield)), 3e18
-        );
+        assertEq(UIScalingMath.yieldGrowthSinceStake(yieldAtStake, token.uiScalingFactor(UIScalingClass.Yield)), 3e18);
     }
 
     //==============================================================================//
@@ -380,10 +376,7 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         actions[3] = ScalingAction(UIScalingClass.Supply, HALF, 360);
     }
 
-    function _runYearLockScenario(ScalingAction[] memory actions)
-        private
-        returns (YearLockSnapshot memory snapshot)
-    {
+    function _runYearLockScenario(ScalingAction[] memory actions) private returns (YearLockSnapshot memory snapshot) {
         ScaledUIClassedToken local = new ScaledUIClassedToken("Year", "YR", owner);
         uint256 yieldAtStake = local.uiScalingFactor(UIScalingClass.Yield);
         uint256 start = block.timestamp;
@@ -391,9 +384,7 @@ contract ScaledUIClassedTokenTest is ScalingTestBase {
         for (uint256 i = 0; i < actions.length; i++) {
             _warpToEffective(start + actions[i].dayOffset * 1 days);
             vm.prank(owner);
-            local.applyUIScalingDelta(
-                actions[i].scalingClass, actions[i].factorDelta, block.timestamp + 1 hours
-            );
+            local.applyUIScalingDelta(actions[i].scalingClass, actions[i].factorDelta, block.timestamp + 1 hours);
             _warpToEffective(block.timestamp + 1 hours);
         }
 

@@ -52,13 +52,10 @@ contract ScaledPairWrapperInvariantTest is ScalingTestBase {
 
     function invariant_ghosts_noClaimsBeyondDeposits() public view {
         // claims == remaining deposits exactly (coupon + share = 1); solo-leg floor
-        // rounding can leave <=1 wei of dust per claimer per pair, so allow slack.
-        uint256 dust = wrapper.pairCount() * 8; // handler has 8 actors
-        assertLe(
-            _totalClaims(),
-            handler.totalDeposited() - handler.totalRedeemed() + dust,
-            "ghost drift"
-        );
+        // rounding leaves up to 1 wei of dust per redemption, so allow slack of the
+        // pair count times the 8 handler actors (each may redeem each pair once).
+        uint256 dust = wrapper.pairCount() * 8;
+        assertLe(_totalClaims(), handler.totalDeposited() - handler.totalRedeemed() + dust, "ghost drift");
     }
 
     function invariant_coupon_matchesHistory() public view {
@@ -74,7 +71,8 @@ contract ScaledPairWrapperInvariantTest is ScalingTestBase {
     }
 
     function invariant_noStuckRaw() public view {
-        // Fully unwrapped pairs leave at most 1 wei of dust per claimer (handler: 8 actors).
+        // Floor rounding leaves at most 1 wei of raw per solo redemption; with 8
+        // actors redeeming once per pair, slack of pairCount x 8 covers it.
         assertLe(wrapper.rawLocked() - _totalClaims(), wrapper.pairCount() * 8, "unclaimed raw exceeds dust");
     }
 }

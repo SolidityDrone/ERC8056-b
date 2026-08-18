@@ -60,13 +60,11 @@ contract ScaledUIClassedToken is
     }
 
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
-        return
-            interfaceId == type(IScaledUIAmount).interfaceId ||
-            interfaceId == type(IScaledUIAmountConversion).interfaceId ||
-            interfaceId == type(IScaledUIAmountBalances).interfaceId ||
-            interfaceId == type(IScaledUIAmountNewUIMultiplier).interfaceId ||
-            interfaceId == type(IScaledUIAmountClasses).interfaceId ||
-            super.supportsInterface(interfaceId);
+        return interfaceId == type(IScaledUIAmount).interfaceId
+            || interfaceId == type(IScaledUIAmountConversion).interfaceId
+            || interfaceId == type(IScaledUIAmountBalances).interfaceId
+            || interfaceId == type(IScaledUIAmountNewUIMultiplier).interfaceId
+            || interfaceId == type(IScaledUIAmountClasses).interfaceId || super.supportsInterface(interfaceId);
     }
 
     //==============================================================================//
@@ -76,12 +74,7 @@ contract ScaledUIClassedToken is
         return uiScalingFactorAt(scalingClass, block.timestamp);
     }
 
-    function uiScalingFactorAt(UIScalingClass scalingClass, uint256 timestamp)
-        public
-        view
-        override
-        returns (uint256)
-    {
+    function uiScalingFactorAt(UIScalingClass scalingClass, uint256 timestamp) public view override returns (uint256) {
         _validateScalingClass(scalingClass);
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
         uint256 factor = UIScalingMath.MULTIPLIER_DECIMALS;
@@ -97,8 +90,7 @@ contract ScaledUIClassedToken is
 
     function uiMultiplierAt(uint256 timestamp) public view override returns (uint256) {
         return UIScalingMath.composeSupplyYield(
-            uiScalingFactorAt(UIScalingClass.Supply, timestamp),
-            uiScalingFactorAt(UIScalingClass.Yield, timestamp)
+            uiScalingFactorAt(UIScalingClass.Supply, timestamp), uiScalingFactorAt(UIScalingClass.Yield, timestamp)
         );
     }
 
@@ -159,30 +151,26 @@ contract ScaledUIClassedToken is
     //==============================================================================//
     // Class writes (enum required - no generic update)                             //
     //==============================================================================//
-    function setUIScalingFactor(
-        UIScalingClass scalingClass,
-        uint256 newFactor,
-        uint256 effectiveAtTimestamp
-    ) public override onlyOwner {
+    function setUIScalingFactor(UIScalingClass scalingClass, uint256 newFactor, uint256 effectiveAtTimestamp)
+        public
+        override
+        onlyOwner
+    {
         _setScalingFactor(scalingClass, newFactor, effectiveAtTimestamp);
     }
 
-    function applyUIScalingDelta(
-        UIScalingClass scalingClass,
-        uint256 factorDelta,
-        uint256 effectiveAtTimestamp
-    ) external override onlyOwner {
+    function applyUIScalingDelta(UIScalingClass scalingClass, uint256 factorDelta, uint256 effectiveAtTimestamp)
+        external
+        override
+        onlyOwner
+    {
         require(factorDelta > 0, "ERC8056: delta must be positive");
         uint256 currentFactor = _currentFactorForDelta(scalingClass);
         uint256 newFactor = Math.mulDiv(currentFactor, factorDelta, UIScalingMath.MULTIPLIER_DECIMALS);
         _setScalingFactor(scalingClass, newFactor, effectiveAtTimestamp);
     }
 
-    function _setScalingFactor(
-        UIScalingClass scalingClass,
-        uint256 newFactor,
-        uint256 effectiveAtTimestamp
-    ) internal {
+    function _setScalingFactor(UIScalingClass scalingClass, uint256 newFactor, uint256 effectiveAtTimestamp) internal {
         _validateScalingClass(scalingClass);
         require(newFactor > 0, "ERC8056: factor must be positive");
         require(effectiveAtTimestamp > block.timestamp, "ERC8056: effective time must be future");
@@ -280,8 +268,7 @@ contract ScaledUIClassedToken is
 
     function _compositeFromPending() internal view returns (uint256) {
         return UIScalingMath.composeSupplyYield(
-            _factorForComposite(UIScalingClass.Supply, true),
-            _factorForComposite(UIScalingClass.Yield, true)
+            _factorForComposite(UIScalingClass.Supply, true), _factorForComposite(UIScalingClass.Yield, true)
         );
     }
 

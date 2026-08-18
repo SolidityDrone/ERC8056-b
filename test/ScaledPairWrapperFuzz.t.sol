@@ -107,9 +107,7 @@ contract ScaledPairWrapperFuzzTest is ScalingTestBase {
         for (uint256 i = 0; i < dividends; i++) {
             vm.prank(owner);
             underlying.applyUIScalingDelta(
-                UIScalingClass.Yield,
-                bound(uint256(keccak256(abi.encode(i))), 5e17, 2e18),
-                block.timestamp + 1 days
+                UIScalingClass.Yield, bound(uint256(keccak256(abi.encode(i))), 5e17, 2e18), block.timestamp + 1 days
             );
             vm.warp(block.timestamp + 1 days);
         }

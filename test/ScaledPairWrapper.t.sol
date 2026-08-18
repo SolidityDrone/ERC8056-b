@@ -9,6 +9,7 @@ import {ScaledUIClassedToken} from "../src/ScaledUIClassedToken.sol";
 import {UIScalingClass} from "../src/interfaces/UIScalingClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 
 contract ScaledPairWrapperTest is ScalingTestBase {
     ScaledUIClassedToken internal underlying;
@@ -22,12 +23,7 @@ contract ScaledPairWrapperTest is ScalingTestBase {
     function setUp() public {
         underlying = new ScaledUIClassedToken("Stock", "STK", owner);
 
-        wrapper = new ScaledPairWrapper(
-            IERC20(address(underlying)),
-            underlying,
-            "Tesla",
-            "Tesla"
-        );
+        wrapper = new ScaledPairWrapper(IERC20(address(underlying)), underlying, "Tesla", "Tesla");
 
         vm.prank(owner);
         underlying.mint(alice, 10_000 ether);
@@ -91,10 +87,7 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         return YieldToken(address(wrapper.pairs(start, target).yield));
     }
 
-    function _assertPairExact(address user, uint256 start, uint256 target, uint256 expected)
-        internal
-        view
-    {
+    function _assertPairExact(address user, uint256 start, uint256 target, uint256 expected) internal view {
         uint256 capBal = _capital(start, target).balanceOf(user);
         uint256 yldBal = _yield(start, target).balanceOf(user);
         assertEq(capBal, yldBal); // full pairs only - equal-leg invariant
@@ -367,26 +360,28 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         // Bob wraps 100 at nonce 1 (Y=1x), locked to nonce 3 where Y lands at 2x.
         _advanceNonce(1 days); // nonce 1, Y = 1x
         (uint256 start, uint256 target) = _wrapLocked(bob, RAW_STAKE, 2); // (1,3)
+        assertEq(start, 1);
+        assertEq(target, 3);
         _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
         _advanceNonce(1 days); // nonce 3, Y = 2x -> target reached
-        assertEq(wrapper.couponOf(1, 3), 5e17);
-        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, 1, 3);
+        assertEq(wrapper.couponOf(start, target), 5e17);
+        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, start, target);
         assertEq(capOut, 50 ether);
         assertEq(yldOut, 50 ether);
 
         // Nonce 5: multiplier lands at 5x. Claims MUST NOT change.
         _advanceNonce(1 days); // nonce 4, Y = 2x
         _setYieldFactor(5e18, 1 days); // nonce 5, Y = 5x
-        assertEq(wrapper.couponOf(1, 3), 5e17, "yield frozen at expiry");
-        assertEq(wrapper.capitalShareOf(1, 3), 5e17, "capital frozen at expiry");
-        (uint256 capOut2, uint256 yldOut2) = wrapper.previewUnwrap(RAW_STAKE, 1, 3);
+        assertEq(wrapper.couponOf(start, target), 5e17, "yield frozen at expiry");
+        assertEq(wrapper.capitalShareOf(start, target), 5e17, "capital frozen at expiry");
+        (uint256 capOut2, uint256 yldOut2) = wrapper.previewUnwrap(RAW_STAKE, start, target);
         assertEq(capOut2, 50 ether);
         assertEq(yldOut2, 50 ether);
 
         // Unwrapping months later pays the frozen split.
         uint256 before = underlying.balanceOf(bob);
         vm.prank(bob);
-        wrapper.unwrap(RAW_STAKE, 1, 3);
+        wrapper.unwrap(RAW_STAKE, start, target);
         assertEq(underlying.balanceOf(bob) - before, RAW_STAKE);
     }
 
@@ -605,5 +600,70 @@ contract ScaledPairWrapperTest is ScalingTestBase {
         vm.expectRevert(ScaledPairWrapper.InvalidAmount.selector);
         vm.prank(alice);
         wrapper.unwrapCapital(0, 1, 2);
+    }
+
+    //==============================================================================//
+    // Liveness edges                                                               //
+    //==============================================================================//
+    function test_unwrap_revertsForHolderOfSingleLeg() public {
+        _advanceNonce(1 days); // nonce 1
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        vm.startPrank(alice);
+        _yield(1, 2).transfer(carol, RAW_STAKE); // alice now holds capital only
+        vm.stopPrank();
+
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, alice, 0, RAW_STAKE));
+        vm.prank(alice);
+        wrapper.unwrap(RAW_STAKE, 1, 2);
+    }
+
+    function test_tokens_areTransferableErc20() public {
+        _advanceNonce(1 days); // nonce 1
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        vm.startPrank(alice);
+        _capital(1, 2).transfer(carol, 10 ether);
+        assertEq(_capital(1, 2).balanceOf(alice), RAW_STAKE - 10 ether);
+        assertEq(_capital(1, 2).balanceOf(carol), 10 ether);
+        _yield(1, 2).transfer(carol, 20 ether);
+        assertEq(_yield(1, 2).balanceOf(alice), RAW_STAKE - 20 ether);
+        assertEq(_yield(1, 2).balanceOf(carol), 20 ether);
+        vm.stopPrank();
+    }
+
+    function test_delayedDividend_lockCapturesLateDividend() public {
+        // Pair (0,1); the pending dividend is superseded before it lands, so the
+        // window's target nonce only fills when a dividend actually becomes
+        // effective. Equal-leg unwrap must work throughout; solo legs stay locked
+        // until then.
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1)
+
+        vm.prank(owner);
+        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 days);
+        vm.prank(owner);
+        underlying.setUIScalingFactor(UIScalingClass.Yield, 3e18, block.timestamp + 1 days);
+
+        uint256 before = underlying.balanceOf(alice);
+        vm.prank(alice);
+        wrapper.unwrap(RAW_STAKE / 2, 0, 1);
+        assertEq(underlying.balanceOf(alice) - before, RAW_STAKE / 2);
+
+        vm.expectRevert(ScaledPairWrapper.Locked.selector);
+        vm.prank(alice);
+        wrapper.unwrapYield(RAW_STAKE / 2, 0, 1);
+        vm.expectRevert(ScaledPairWrapper.Locked.selector);
+        vm.prank(alice);
+        wrapper.unwrapCapital(RAW_STAKE / 2, 0, 1);
+
+        // The next dividend fills nonce 1; solo legs unlock with the frozen coupon.
+        _setYieldFactor(2e18, 1 days); // nonce 1, Y = 2x
+        assertEq(wrapper.couponOf(0, 1), 5e17);
+        uint256 yldBefore = underlying.balanceOf(alice);
+        vm.prank(alice);
+        wrapper.unwrapYield(RAW_STAKE / 2, 0, 1);
+        assertEq(underlying.balanceOf(alice) - yldBefore, RAW_STAKE / 4);
+        uint256 capBefore = underlying.balanceOf(alice);
+        vm.prank(alice);
+        wrapper.unwrapCapital(RAW_STAKE / 2, 0, 1);
+        assertEq(underlying.balanceOf(alice) - capBefore, RAW_STAKE / 4);
     }
 }

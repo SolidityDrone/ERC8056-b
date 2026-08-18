@@ -22,10 +22,7 @@ interface IScaledUIAmountClasses {
     }
 
     event UIScalingFactorUpdated(
-        UIScalingClass indexed scalingClass,
-        uint256 oldFactor,
-        uint256 newFactor,
-        uint256 effectiveAtTimestamp
+        UIScalingClass indexed scalingClass, uint256 oldFactor, uint256 newFactor, uint256 effectiveAtTimestamp
     );
 
     /// @dev Current cumulative factor for `scalingClass` (1e18 = 1.0x).
@@ -68,16 +65,9 @@ interface IScaledUIAmountClasses {
      * Supply example: 2-for-1 split sets factor from 1e18 to 2e18.
      * Yield example: reinvestment sets factor from 1e18 to 1.05e18.
      */
-    function setUIScalingFactor(
-        UIScalingClass scalingClass,
-        uint256 newFactor,
-        uint256 effectiveAtTimestamp
-    ) external;
+    function setUIScalingFactor(UIScalingClass scalingClass, uint256 newFactor, uint256 effectiveAtTimestamp) external;
 
     /// @dev Schedule a relative delta: `newFactor = current * factorDelta / 1e18`.
-    function applyUIScalingDelta(
-        UIScalingClass scalingClass,
-        uint256 factorDelta,
-        uint256 effectiveAtTimestamp
-    ) external;
+    function applyUIScalingDelta(UIScalingClass scalingClass, uint256 factorDelta, uint256 effectiveAtTimestamp)
+        external;
 }

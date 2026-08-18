@@ -27,9 +27,9 @@ import {YieldToken} from "./tokens/YieldToken.sol";
  *   pair whose window has ended, so unwrapping months later pays the same split.
  *
  *   Redemption rules:
- *     - unwrap(amount, s, t)       — burn both legs, receive exactly `amount`, ANYTIME.
- *     - unwrapYield(amount, s, t)  — solo yield leg, only when yieldNonce() >= t.
- *     - unwrapCapital(amount, s, t)— solo capital leg, only when yieldNonce() >= t.
+ *     - unwrap(amount, s, t)       - burn both legs, receive exactly `amount`, ANYTIME.
+ *     - unwrapYield(amount, s, t)  - solo yield leg, only when yieldNonce() >= t.
+ *     - unwrapCapital(amount, s, t)- solo capital leg, only when yieldNonce() >= t.
  *
  *   coupon + share = 1, so every pair's total claim equals its deposit and the
  *   shared vault stays solvent by construction.
@@ -68,13 +68,7 @@ contract ScaledPairWrapper {
         uint256 yieldLegRawOut
     );
     event UnwrapYield(address indexed user, uint256 startNonce, uint256 targetNonce, uint256 amount, uint256 rawOut);
-    event UnwrapCapital(
-        address indexed user,
-        uint256 startNonce,
-        uint256 targetNonce,
-        uint256 amount,
-        uint256 rawOut
-    );
+    event UnwrapCapital(address indexed user, uint256 startNonce, uint256 targetNonce, uint256 amount, uint256 rawOut);
 
     constructor(
         IERC20 underlying_,
@@ -101,21 +95,10 @@ contract ScaledPairWrapper {
 
         Pair storage pair = _pairs[startNonce][targetNonce];
         if (address(pair.capital) == address(0)) {
-            string memory suffix = string.concat(
-                Strings.toString(startNonce),
-                "-",
-                Strings.toString(targetNonce)
-            );
-            pair.capital = new CapitalToken(
-                string.concat("Capital-", suffix),
-                string.concat("Cap", suffix),
-                address(this)
-            );
-            pair.yield = new YieldToken(
-                string.concat("Yield-", suffix),
-                string.concat("Yld", suffix),
-                address(this)
-            );
+            string memory suffix = string.concat(Strings.toString(startNonce), "-", Strings.toString(targetNonce));
+            pair.capital =
+                new CapitalToken(string.concat("Capital-", suffix), string.concat("Cap", suffix), address(this));
+            pair.yield = new YieldToken(string.concat("Yield-", suffix), string.concat("Yld", suffix), address(this));
             _pairStarts.push(startNonce);
             _pairTargets.push(targetNonce);
         }
@@ -138,7 +121,7 @@ contract ScaledPairWrapper {
         if (amount == 0) revert InvalidAmount();
         Pair storage pair = _requirePair(startNonce, targetNonce);
 
-        (uint256 capitalRawOut, uint256 yieldLegRawOut) = _previewUnwrap(pair, amount, startNonce, targetNonce);
+        (uint256 capitalRawOut, uint256 yieldLegRawOut) = _previewUnwrap(amount, startNonce, targetNonce);
 
         pair.capital.burn(msg.sender, amount);
         pair.yield.burn(msg.sender, amount);
@@ -189,7 +172,7 @@ contract ScaledPairWrapper {
     // ------------------------------------------------------------------
     // Views
     // ------------------------------------------------------------------
-    /// @dev Current yield nonce (effective dividend count) — delegated to the extension.
+    /// @dev Current yield nonce (effective dividend count) - delegated to the extension.
     function currentNonce() public view returns (uint256) {
         return scaledUnderlying.yieldNonce();
     }
@@ -256,22 +239,18 @@ contract ScaledPairWrapper {
         returns (uint256 capitalRawOut, uint256 yieldLegRawOut)
     {
         Pair storage pair = _requirePair(startNonce, targetNonce);
-        return _previewUnwrap(pair, amount, startNonce, targetNonce);
+        return _previewUnwrap(amount, startNonce, targetNonce);
     }
 
     /// @notice Preview solo yield redemption of `amount` yield tokens of window (start, target).
-    /// @dev Reverts EventNotEffective before the target is effective.
-    function previewUnwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce)
-        public
-        view
-        returns (uint256)
-    {
+    /// @dev Reverts EventNotEffective/EventNotRecorded until the target is effective.
+    function previewUnwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce) public view returns (uint256) {
         _requirePair(startNonce, targetNonce);
         return Math.mulDiv(amount, _couponOf(startNonce, targetNonce), UIScalingMath.MULTIPLIER_DECIMALS);
     }
 
     /// @notice Preview solo capital redemption of `amount` capital tokens of window (start, target).
-    /// @dev Reverts EventNotEffective before the target is effective.
+    /// @dev Reverts EventNotEffective/EventNotRecorded until the target is effective.
     function previewUnwrapCapital(uint256 amount, uint256 startNonce, uint256 targetNonce)
         public
         view
@@ -296,14 +275,10 @@ contract ScaledPairWrapper {
         uint256 yStart = scaledUnderlying.yieldEventAt(startNonce).multiplier;
         uint256 yTarget = scaledUnderlying.yieldEventAt(targetNonce).multiplier;
         if (yTarget <= yStart) return 0;
-        return Math.mulDiv(
-            yTarget - yStart,
-            UIScalingMath.MULTIPLIER_DECIMALS,
-            yTarget
-        );
+        return Math.mulDiv(yTarget - yStart, UIScalingMath.MULTIPLIER_DECIMALS, yTarget);
     }
 
-    function _previewUnwrap(Pair storage pair, uint256 amount, uint256 startNonce, uint256 targetNonce)
+    function _previewUnwrap(uint256 amount, uint256 startNonce, uint256 targetNonce)
         internal
         view
         returns (uint256 capitalRawOut, uint256 yieldLegRawOut)
