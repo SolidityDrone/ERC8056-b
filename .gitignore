@@ -2,4 +2,4 @@ out/
 cache/
 broadcast/
 test/Scratch.t.sol
-docs/superpowers/
+**/superpowers/
