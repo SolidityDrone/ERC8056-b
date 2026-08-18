@@ -86,8 +86,9 @@ interface IERC8056PairWrapper {
     function capitalSupply() external view returns (uint256);
     function yieldSupply() external view returns (uint256);
 
-    /// @dev Raw backing of a single window: the staked amount, equal to capitalSupplyOf
-    ///      (and yieldSupplyOf, since each wrapped unit mints one capital and one yield).
+    /// @dev Outstanding capital supply of window (start, target). This equals the window's
+    ///      raw backing (staked amount) before any solo `unwrapYield`; after a yield-leg
+    ///      redemption it no longer reflects remaining raw backing.
     function rawLockedOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
 
     // ------------------------------------------------------------------ pricing (frozen)

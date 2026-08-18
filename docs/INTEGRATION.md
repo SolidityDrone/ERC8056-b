@@ -73,11 +73,17 @@ calls with different display `name`/`symbol` are ignored.
 ```solidity
 IERC8056PairWrapper w = registry.deployOrGet(
     rawToken,          // IERC20 underlying
-    scaledUnderlying,  // IERC8056TokenClasses extension (validated via ERC-165)
+    rawToken,          // scaledUnderlying: MUST be the same contract (extension == token)
     "Tesla",           // display name
     "Tesla"            // display symbol
 );
 ```
+
+`deployOrGet` reverts `ExtensionMismatch` if `scaledUnderlying` is not the same
+contract as `underlying`, and `UnsupportedExtension` if that contract does not
+report `IERC8056TokenClasses` via ERC-165. Binding the two prevents a third
+party from front-running registration and pricing the canonical wrapper's
+redemptions off an untrusted extension.
 
 Enumeration and reverse lookup are available:
 
@@ -86,9 +92,6 @@ Enumeration and reverse lookup are available:
 | `wrapperFor(underlying)` | canonical wrapper, zero if unregistered |
 | `wrapperCount()` / `wrapperAt(i)` | enumerate all registered assets |
 | `underlyingOf(wrapper)` | reverse: raw token behind a wrapper |
-
-`deployOrGet` reverts `UnsupportedExtension` if `scaledUnderlying` does not
-report `IERC8056TokenClasses` via ERC-165.
 
 ---
 
@@ -116,7 +119,7 @@ list them on its auction or forward them to a vault.
 | `unwrapYield(amount, start, target)` | burn `amount` yield leg for `amount * coupon` |
 | `unwrapCapital(amount, start, target)` | burn `amount` capital leg for `amount * (1 - coupon)` |
 | `rawLocked()` | total raw underlying locked across all windows |
-| `rawLockedOf(start, target)` | raw backing of a single window |
+| `rawLockedOf(start, target)` | outstanding capital supply of a window (== raw backing before any solo yield redemption) |
 
 Both solo redemption functions revert `Locked` while `currentNonce() < target`.
 `unwrap` is unconditional — it is the safe exit for any window.

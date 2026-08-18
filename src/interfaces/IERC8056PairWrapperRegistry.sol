@@ -13,7 +13,10 @@ import {IERC8056PairWrapper} from "./IERC8056PairWrapper.sol";
  *
  *   The registry enforces singleton semantics: the first deployOrGet for an
  *   underlying establishes its canonical wrapper; every later call returns the
- *   same address. Identity is keyed by `underlying` only.
+ *   same address. Identity is keyed by `underlying` only. `scaledUnderlying`
+ *   MUST be the same contract as `underlying` (the underlying RWA token is the
+ *   class-decomposed extension), so a third party cannot bind an untrusted
+ *   extension that would price the canonical wrapper's redemptions.
  */
 interface IERC8056PairWrapperRegistry {
     /// @notice Canonical wrapper for `underlying`; zero address if never registered.
@@ -21,11 +24,14 @@ interface IERC8056PairWrapperRegistry {
 
     /// @notice Canonical wrapper for `underlying`, deploying and caching it on first
     ///         call (idempotent thereafter).
-    /// @param underlying       Raw RWA token (ERC-20).
+    /// @param underlying       Raw RWA token (ERC-20); MUST equal `scaledUnderlying`.
     /// @param scaledUnderlying The ERC-8056 class-decomposed extension the wrapper reads
-    ///                         yield history from. Validated via ERC-165.
+    ///                         yield history from. MUST be the same contract as `underlying`;
+    ///                         validated via ERC-165.
     /// @param name             Asset display name (prefixes the Capital/Yield token names).
     /// @param symbol           Asset display symbol.
+    /// @dev Reverts ExtensionMismatch if `scaledUnderlying != underlying`;
+    ///      reverts UnsupportedExtension if it does not report IERC8056TokenClasses via ERC-165.
     function deployOrGet(
         IERC20 underlying,
         IERC8056TokenClasses scaledUnderlying,

@@ -88,8 +88,8 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
             _pairTargets.push(targetNonce);
         }
 
-        underlying.safeTransferFrom(msg.sender, address(this), rawAmount);
         rawLocked += rawAmount;
+        underlying.safeTransferFrom(msg.sender, address(this), rawAmount);
         _capital(pair).mint(msg.sender, rawAmount);
         _yield(pair).mint(msg.sender, rawAmount);
 
@@ -218,7 +218,8 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
         return address(pair.yield) == address(0) ? 0 : pair.yield.totalSupply();
     }
 
-    /// @dev Raw backing of a single window: the staked amount (== capitalSupplyOf).
+    /// @dev Outstanding capital supply of window (start, target); equals the window's raw
+    ///      backing before any solo yield redemption.
     function rawLockedOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
         return capitalSupplyOf(startNonce, targetNonce);
     }

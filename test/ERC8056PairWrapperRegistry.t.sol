@@ -64,15 +64,28 @@ contract ERC8056PairWrapperRegistryTest is ScalingTestBase {
         assertEq(address(registry.underlyingOf(w)), address(underlying), "reverse maps back");
     }
 
-    function test_DeployOrGet_ValidatesExtensionViaERC165() public {
+    function test_DeployOrGet_RejectsMismatchedExtension() public {
         IERC20 bogusUnderlying = IERC20(address(new BogusToken("Bogus", "BOG")));
-        ERC8056TokenClasses bogusExtension = ERC8056TokenClasses(address(new BogusExtension()));
+        ERC8056TokenClasses differentExtension = ERC8056TokenClasses(address(new BogusToken("Other", "OTH")));
+        vm.expectRevert(ERC8056PairWrapperRegistry.ExtensionMismatch.selector);
+        registry.deployOrGet(bogusUnderlying, differentExtension, "B", "B");
+    }
+
+    function test_DeployOrGet_ValidatesExtensionViaERC165() public {
+        IERC20 bogus = IERC20(address(new BogusToken("Bogus", "BOG")));
         vm.expectRevert(ERC8056PairWrapperRegistry.UnsupportedExtension.selector);
-        registry.deployOrGet(bogusUnderlying, bogusExtension, "B", "B");
+        registry.deployOrGet(bogus, ERC8056TokenClasses(address(bogus)), "B", "B");
     }
 
     function test_DeployedWrapper_IsUsable() public {
         IERC8056PairWrapper w = registry.deployOrGet(IERC20(address(underlying)), underlying, "Tesla", "Tesla");
+
+        uint256 fakeStart = 9;
+        uint256 fakeTarget = 10;
+        assertFalse(w.hasPair(fakeStart, fakeTarget), "uncreated window has no pair");
+        assertEq(address(w.capitalToken(fakeStart, fakeTarget)), address(0), "capitalToken zero for uncreated");
+        assertEq(address(w.yieldToken(fakeStart, fakeTarget)), address(0), "yieldToken zero for uncreated");
+        assertEq(w.rawLockedOf(fakeStart, fakeTarget), 0, "rawLockedOf zero for uncreated");
 
         vm.prank(owner);
         underlying.mint(address(this), RAW_STAKE);
@@ -81,7 +94,9 @@ contract ERC8056PairWrapperRegistryTest is ScalingTestBase {
         (uint256 start, uint256 target) = w.wrap(RAW_STAKE, 1);
         assertGt(target, start, "wrapped through registry wrapper");
 
+        assertTrue(w.hasPair(start, target), "created window has pair");
         assertEq(address(w.capitalToken(start, target)), address(w.pairs(start, target).capital), "token getter");
+        assertEq(address(w.yieldToken(start, target)), address(w.pairs(start, target).yield), "yield token getter");
         assertEq(w.rawLockedOf(start, target), RAW_STAKE, "rawLockedOf equals staked");
     }
 }
@@ -96,6 +111,3 @@ contract BogusToken {
         symbol = symbol_;
     }
 }
-
-/// @dev A contract that does not implement IERC8056TokenClasses (no supportsInterface).
-contract BogusExtension {}
