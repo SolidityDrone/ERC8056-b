@@ -4,25 +4,17 @@ pragma solidity ^0.8.24;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {IScaledUIAmount} from "./interfaces/IScaledUIAmount.sol";
-import {IScaledUIAmountConversion} from "./interfaces/IScaledUIAmountConversion.sol";
-import {IScaledUIAmountBalances} from "./interfaces/IScaledUIAmountBalances.sol";
-import {IScaledUIAmountNewUIMultiplier} from "./interfaces/IScaledUIAmountNewUIMultiplier.sol";
+import {IERC8056} from "./interfaces/IERC8056.sol";
+import {IERC8056Conversion} from "./interfaces/IERC8056Conversion.sol";
+import {IERC8056Balances} from "./interfaces/IERC8056Balances.sol";
+import {IERC8056NewUIMultiplier} from "./interfaces/IERC8056NewUIMultiplier.sol";
 
 /**
- * @title ScaledUIToken
+ * @title ERC8056
  * @notice Reference implementation from EIP-8056.
  * @dev See https://eips.ethereum.org/EIPS/eip-8056
  */
-contract ScaledUIToken is
-    ERC20,
-    ERC165,
-    IScaledUIAmount,
-    IScaledUIAmountConversion,
-    IScaledUIAmountBalances,
-    IScaledUIAmountNewUIMultiplier,
-    Ownable
-{
+contract ERC8056 is ERC20, ERC165, IERC8056, IERC8056Conversion, IERC8056Balances, IERC8056NewUIMultiplier, Ownable {
     uint256 private constant MULTIPLIER_DECIMALS = 1e18;
     uint256 private _uiMultiplier = MULTIPLIER_DECIMALS;
     uint256 private _newUIMultiplier = MULTIPLIER_DECIMALS;
@@ -38,10 +30,9 @@ contract ScaledUIToken is
     }
 
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
-        return interfaceId == type(IScaledUIAmount).interfaceId
-            || interfaceId == type(IScaledUIAmountConversion).interfaceId
-            || interfaceId == type(IScaledUIAmountBalances).interfaceId
-            || interfaceId == type(IScaledUIAmountNewUIMultiplier).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IERC8056).interfaceId || interfaceId == type(IERC8056Conversion).interfaceId
+            || interfaceId == type(IERC8056Balances).interfaceId
+            || interfaceId == type(IERC8056NewUIMultiplier).interfaceId || super.supportsInterface(interfaceId);
     }
 
     function uiMultiplier() public view override returns (uint256) {

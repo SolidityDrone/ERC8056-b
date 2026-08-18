@@ -5,14 +5,14 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {IScaledUIAmountClasses} from "./interfaces/IScaledUIAmountClasses.sol";
+import {IERC8056TokenClasses} from "./interfaces/IERC8056TokenClasses.sol";
 import {UIScalingClass} from "./interfaces/UIScalingClass.sol";
 import {UIScalingMath} from "./libraries/UIScalingMath.sol";
 import {CapitalToken} from "./tokens/CapitalToken.sol";
 import {YieldToken} from "./tokens/YieldToken.sol";
 
 /**
- * @title ScaledPairWrapper
+ * @title ERC8056PairWrapper
  * @notice Window-coupon wrapper: splits raw RWA into Capital / Yield ERC-20 pairs,
  *         one pair per (startNonce, targetNonce) yield-event window.
  *
@@ -34,7 +34,7 @@ import {YieldToken} from "./tokens/YieldToken.sol";
  *   coupon + share = 1, so every pair's total claim equals its deposit and the
  *   shared vault stays solvent by construction.
  */
-contract ScaledPairWrapper {
+contract ERC8056PairWrapper {
     using SafeERC20 for IERC20;
 
     error InvalidAmount();
@@ -47,7 +47,7 @@ contract ScaledPairWrapper {
     }
 
     IERC20 public immutable underlying;
-    IScaledUIAmountClasses public immutable scaledUnderlying;
+    IERC8056TokenClasses public immutable scaledUnderlying;
     string public assetName;
     string public assetSymbol;
 
@@ -72,7 +72,7 @@ contract ScaledPairWrapper {
 
     constructor(
         IERC20 underlying_,
-        IScaledUIAmountClasses scaledUnderlying_,
+        IERC8056TokenClasses scaledUnderlying_,
         string memory assetName_,
         string memory assetSymbol_
     ) {

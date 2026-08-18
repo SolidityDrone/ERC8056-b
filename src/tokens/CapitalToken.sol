@@ -5,7 +5,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
  * @title CapitalToken
- * @notice Fungible ERC-20 receipt for the principal leg of a ScaledPairWrapper pair.
+ * @notice Fungible ERC-20 receipt for the principal leg of a ERC8056PairWrapper pair.
  *
  * One capital token is a claim on one constant Yield-UI unit of principal: its raw
  * value is `1 / yieldFactor(now)` and its Yield-UI value is always 1, independent of

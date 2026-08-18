@@ -3,22 +3,22 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {ScaledPairWrapper} from "../src/ScaledPairWrapper.sol";
-import {ScaledUIClassedToken} from "../src/ScaledUIClassedToken.sol";
+import {ERC8056PairWrapper} from "../src/ERC8056PairWrapper.sol";
+import {ERC8056TokenClasses} from "../src/ERC8056TokenClasses.sol";
 import {UIScalingClass} from "../src/interfaces/UIScalingClass.sol";
 
 /// @dev Action handler for the wrapper invariant suite. Every entrypoint either
 ///      performs an operation or reverts; asserts inside handlers fail the suite.
-contract ScaledPairWrapperHandler is Test {
-    ScaledUIClassedToken public immutable underlying;
-    ScaledPairWrapper public immutable wrapper;
+contract ERC8056PairWrapperHandler is Test {
+    ERC8056TokenClasses public immutable underlying;
+    ERC8056PairWrapper public immutable wrapper;
     address public immutable owner;
 
     uint256 public totalDeposited;
     uint256 public totalRedeemed;
     uint256 public soloRedemptions;
 
-    constructor(ScaledUIClassedToken underlying_, ScaledPairWrapper wrapper_, address owner_) {
+    constructor(ERC8056TokenClasses underlying_, ERC8056PairWrapper wrapper_, address owner_) {
         underlying = underlying_;
         wrapper = wrapper_;
         owner = owner_;
@@ -76,7 +76,7 @@ contract ScaledPairWrapperHandler is Test {
         uint256 amount = bound(amountSeed, 1, yldBal);
 
         if (wrapper.currentNonce() < target) {
-            vm.expectRevert(ScaledPairWrapper.Locked.selector);
+            vm.expectRevert(ERC8056PairWrapper.Locked.selector);
             vm.prank(actor);
             wrapper.unwrapYield(amount, start, target);
             return;
@@ -99,7 +99,7 @@ contract ScaledPairWrapperHandler is Test {
         uint256 amount = bound(amountSeed, 1, capBal);
 
         if (wrapper.currentNonce() < target) {
-            vm.expectRevert(ScaledPairWrapper.Locked.selector);
+            vm.expectRevert(ERC8056PairWrapper.Locked.selector);
             vm.prank(actor);
             wrapper.unwrapCapital(amount, start, target);
             return;

@@ -7,7 +7,7 @@ pragma solidity ^0.8.24;
  *
  * Interface ID: 0xd890fd71
  */
-interface IScaledUIAmountBalances {
+interface IERC8056Balances {
     /**
      * @dev Returns the UI-adjusted balance of an account.
      */

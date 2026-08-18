@@ -2,23 +2,23 @@
 pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
-import {ScaledPairWrapper} from "../src/ScaledPairWrapper.sol";
-import {ScaledPairWrapperHandler} from "./ScaledPairWrapperHandler.sol";
-import {ScaledUIClassedToken} from "../src/ScaledUIClassedToken.sol";
+import {ERC8056PairWrapper} from "../src/ERC8056PairWrapper.sol";
+import {ERC8056PairWrapperHandler} from "./ERC8056PairWrapperHandler.sol";
+import {ERC8056TokenClasses} from "../src/ERC8056TokenClasses.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract ScaledPairWrapperInvariantTest is ScalingTestBase {
-    ScaledUIClassedToken internal underlying;
-    ScaledPairWrapper internal wrapper;
-    ScaledPairWrapperHandler internal handler;
+contract ERC8056PairWrapperInvariantTest is ScalingTestBase {
+    ERC8056TokenClasses internal underlying;
+    ERC8056PairWrapper internal wrapper;
+    ERC8056PairWrapperHandler internal handler;
 
     address internal owner = makeAddr("owner");
 
     function setUp() public {
-        underlying = new ScaledUIClassedToken("Stock", "STK", owner);
-        wrapper = new ScaledPairWrapper(IERC20(address(underlying)), underlying, "Tesla", "Tesla");
-        handler = new ScaledPairWrapperHandler(underlying, wrapper, owner);
+        underlying = new ERC8056TokenClasses("Stock", "STK", owner);
+        wrapper = new ERC8056PairWrapper(IERC20(address(underlying)), underlying, "Tesla", "Tesla");
+        handler = new ERC8056PairWrapperHandler(underlying, wrapper, owner);
         targetContract(address(handler));
     }
 

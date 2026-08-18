@@ -7,7 +7,7 @@ pragma solidity ^0.8.24;
  *
  * Interface ID: 0x57854fc3
  */
-interface IScaledUIAmountConversion {
+interface IERC8056Conversion {
     /**
      * @dev Converts a raw token amount to its UI representation.
      */

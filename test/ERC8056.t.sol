@@ -2,18 +2,18 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {ScaledUIToken} from "../src/ScaledUIToken.sol";
-import {IScaledUIAmount} from "../src/interfaces/IScaledUIAmount.sol";
+import {ERC8056} from "../src/ERC8056.sol";
+import {IERC8056} from "../src/interfaces/IERC8056.sol";
 
-contract ScaledUITokenTest is Test {
-    ScaledUIToken internal token;
+contract ERC8056Test is Test {
+    ERC8056 internal token;
     address internal owner = makeAddr("owner");
     address internal alice = makeAddr("alice");
 
     uint256 internal constant MULTIPLIER_DECIMALS = 1e18;
 
     function setUp() public {
-        token = new ScaledUIToken("Scaled UI Token", "SUI", owner);
+        token = new ERC8056("Scaled UI Token", "SUI", owner);
         vm.prank(owner);
         token.mint(alice, 100 ether);
     }
@@ -24,7 +24,7 @@ contract ScaledUITokenTest is Test {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(token.supportsInterface(type(IScaledUIAmount).interfaceId));
+        assertTrue(token.supportsInterface(type(IERC8056).interfaceId));
         assertTrue(token.supportsInterface(0xa60bf13d));
         assertTrue(token.supportsInterface(0x4bd27648));
         assertTrue(token.supportsInterface(0x57854fc3));
@@ -64,7 +64,7 @@ contract ScaledUITokenTest is Test {
         address bob = makeAddr("bob");
 
         vm.expectEmit(true, true, true, true);
-        emit IScaledUIAmount.TransferWithUIAmount(alice, bob, 10 ether, 10 ether);
+        emit IERC8056.TransferWithUIAmount(alice, bob, 10 ether, 10 ether);
 
         vm.prank(alice);
         token.transfer(bob, 10 ether);

@@ -7,7 +7,7 @@ pragma solidity ^0.8.24;
  *
  * Interface ID: 0xa60bf13d
  */
-interface IScaledUIAmount {
+interface IERC8056 {
     /**
      * @dev Emitted when the UI multiplier is updated or initialized.
      * @param oldMultiplier The previous multiplier value. A value of 0 indicates

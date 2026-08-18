@@ -5,7 +5,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
  * @title YieldToken
- * @notice Fungible ERC-20 receipt for the yield leg of a ScaledPairWrapper pair.
+ * @notice Fungible ERC-20 receipt for the yield leg of a ERC8056PairWrapper pair.
  *
  * One yield token is a claim on `poolYieldRaw / yieldSupply` raw units of the bucket's
  * accrued yield pool. All yield tokens of a bucket share one uniform value, so tokens

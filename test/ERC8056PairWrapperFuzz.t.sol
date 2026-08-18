@@ -2,22 +2,22 @@
 pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
-import {ScaledPairWrapper} from "../src/ScaledPairWrapper.sol";
-import {ScaledUIClassedToken} from "../src/ScaledUIClassedToken.sol";
+import {ERC8056PairWrapper} from "../src/ERC8056PairWrapper.sol";
+import {ERC8056TokenClasses} from "../src/ERC8056TokenClasses.sol";
 import {UIScalingClass} from "../src/interfaces/UIScalingClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract ScaledPairWrapperFuzzTest is ScalingTestBase {
-    ScaledUIClassedToken internal underlying;
-    ScaledPairWrapper internal wrapper;
+contract ERC8056PairWrapperFuzzTest is ScalingTestBase {
+    ERC8056TokenClasses internal underlying;
+    ERC8056PairWrapper internal wrapper;
 
     address internal owner = makeAddr("owner");
     address internal alice = makeAddr("alice");
 
     function setUp() public {
-        underlying = new ScaledUIClassedToken("Stock", "STK", owner);
-        wrapper = new ScaledPairWrapper(IERC20(address(underlying)), underlying, "Tesla", "Tesla");
+        underlying = new ERC8056TokenClasses("Stock", "STK", owner);
+        wrapper = new ERC8056PairWrapper(IERC20(address(underlying)), underlying, "Tesla", "Tesla");
         vm.prank(owner);
         underlying.mint(alice, type(uint96).max);
         vm.startPrank(alice);

@@ -7,10 +7,10 @@ import {UIScalingClass} from "./UIScalingClass.sol";
  * @dev Extension interface for decomposed UI scaling (EIP-8056 improvement).
  *
  * All scaling updates MUST specify a {UIScalingClass}. There is no generic
- * monolithic multiplier update entrypoint. The composite {IScaledUIAmount-uiMultiplier}
+ * monolithic multiplier update entrypoint. The composite {IERC8056-uiMultiplier}
  * is always derived as the product of every class factor (Supply × Yield × Other).
  */
-interface IScaledUIAmountClasses {
+interface IERC8056TokenClasses {
     struct ScalingCheckpoint {
         uint256 effectiveAt;
         uint256 cumulativeFactor;

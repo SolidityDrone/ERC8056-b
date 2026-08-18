@@ -7,7 +7,7 @@ pragma solidity ^0.8.24;
  *
  * Interface ID: 0x4bd27648
  */
-interface IScaledUIAmountNewUIMultiplier {
+interface IERC8056NewUIMultiplier {
     /**
      * @dev Returns the pending UI multiplier scheduled to take effect at {effectiveAt}.
      * Multiplier is represented with 18 decimals (1e18 = 1.0).

@@ -5,26 +5,26 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IScaledUIAmount} from "./interfaces/IScaledUIAmount.sol";
-import {IScaledUIAmountConversion} from "./interfaces/IScaledUIAmountConversion.sol";
-import {IScaledUIAmountBalances} from "./interfaces/IScaledUIAmountBalances.sol";
-import {IScaledUIAmountNewUIMultiplier} from "./interfaces/IScaledUIAmountNewUIMultiplier.sol";
-import {IScaledUIAmountClasses} from "./interfaces/IScaledUIAmountClasses.sol";
+import {IERC8056} from "./interfaces/IERC8056.sol";
+import {IERC8056Conversion} from "./interfaces/IERC8056Conversion.sol";
+import {IERC8056Balances} from "./interfaces/IERC8056Balances.sol";
+import {IERC8056NewUIMultiplier} from "./interfaces/IERC8056NewUIMultiplier.sol";
+import {IERC8056TokenClasses} from "./interfaces/IERC8056TokenClasses.sol";
 import {UIScalingClass} from "./interfaces/UIScalingClass.sol";
 import {UIScalingMath} from "./libraries/UIScalingMath.sol";
 
 /**
- * @title ScaledUIClassedToken
+ * @title ERC8056TokenClasses
  * @notice EIP-8056 with Supply / Yield decomposed scaling, scheduling, and history.
  */
-contract ScaledUIClassedToken is
+contract ERC8056TokenClasses is
     ERC20,
     ERC165,
-    IScaledUIAmount,
-    IScaledUIAmountConversion,
-    IScaledUIAmountBalances,
-    IScaledUIAmountNewUIMultiplier,
-    IScaledUIAmountClasses,
+    IERC8056,
+    IERC8056Conversion,
+    IERC8056Balances,
+    IERC8056NewUIMultiplier,
+    IERC8056TokenClasses,
     Ownable
 {
     struct ClassScalingState {
@@ -60,11 +60,10 @@ contract ScaledUIClassedToken is
     }
 
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
-        return interfaceId == type(IScaledUIAmount).interfaceId
-            || interfaceId == type(IScaledUIAmountConversion).interfaceId
-            || interfaceId == type(IScaledUIAmountBalances).interfaceId
-            || interfaceId == type(IScaledUIAmountNewUIMultiplier).interfaceId
-            || interfaceId == type(IScaledUIAmountClasses).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IERC8056).interfaceId || interfaceId == type(IERC8056Conversion).interfaceId
+            || interfaceId == type(IERC8056Balances).interfaceId
+            || interfaceId == type(IERC8056NewUIMultiplier).interfaceId
+            || interfaceId == type(IERC8056TokenClasses).interfaceId || super.supportsInterface(interfaceId);
     }
 
     //==============================================================================//
