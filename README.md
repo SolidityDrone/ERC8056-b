@@ -90,8 +90,8 @@ forge script script/DeployERC8056TokenClasses.s.sol --rpc-url <RPC> --broadcast
 ├── test/                         # unit, fuzz, and invariant suites
 ├── docs/
 │   ├── MOTIVATION.md             # why this proposal exists
-│   └── TECHNICAL.md              # extension spec, expiry, use cases
-└── PROPOSAL.md                   # Ethereum Magicians proposal draft
+│   ├── TECHNICAL.md              # extension spec, expiry, use cases
+│   └── PROPOSAL.md               # Ethereum Magicians proposal draft
 ```
 
 ## Scaling classes

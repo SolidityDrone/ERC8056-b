@@ -2,4 +2,7 @@ out/
 cache/
 broadcast/
 test/Scratch.t.sol
-**/superpowers/
+docs/*
+!docs/MOTIVATION.md
+!docs/TECHNICAL.md
+!docs/PROPOSAL.md

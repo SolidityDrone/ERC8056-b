@@ -73,4 +73,4 @@ build on RWA without trusting a single scalar:
 
 The mechanics — how classes, checkpoint history, and nonce-based expiry produce
 a deterministic, solvent split — are in [TECHNICAL.md](TECHNICAL.md). The formal
-proposal draft is at [PROPOSAL.md](../PROPOSAL.md).
+proposal draft is at [PROPOSAL.md](PROPOSAL.md).

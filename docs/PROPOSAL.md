@@ -147,5 +147,5 @@ full security and mechanics treatment.
 
 ## Copyright
 
-Copyright and related rights waived via [CC0](LICENSE-CC0) (per
+Copyright and related rights waived via [CC0](../LICENSE-CC0) (per
 [EIP-1](https://eips.ethereum.org/EIPS/eip-1)).
