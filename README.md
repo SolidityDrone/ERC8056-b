@@ -1,20 +1,127 @@
-# ERC-8056 ERC8056PairWrapper
+# ERC-8056 Improvement: Class-Decomposed UI Scaling & Capital/Yield Wrapping
 
-A Foundry (Solidity 0.8.24) implementation of **EIP-8056** UI scaling with a
-**frozen-delta window-coupon wrapper**.
+A Foundry (Solidity 0.8.24) reference implementation of an **EIP-8056
+improvement** that decomposes UI scaling into named classes and uses that
+decomposition to split an RWA token into **Capital** and **Yield** ERC-20 legs
+with nonce-based (event-based) expiration.
 
-## Overview
+- [`ERC8056`](src/ERC8056.sol) — the base EIP-8056 reference implementation (single composite multiplier).
+- [`ERC8056TokenClasses`](src/ERC8056TokenClasses.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and an append-only checkpoint history that also serves as the yield-event log.
+- [`ERC8056PairWrapper`](src/ERC8056PairWrapper.sol) — a standalone wrapper (WETH-style) that splits raw RWA into per-window `CapitalToken` / `YieldToken` ERC-20 pairs with frozen-delta, nonce-gated redemption.
 
-- `ERC8056TokenClasses` — EIP-8056 token with decomposed **Supply** / **Yield** /
-  **Other** scaling, scheduled (pending) updates, and an append-only checkpoint
-  history.
-- `ERC8056PairWrapper` — splits raw RWA into **Capital** / **Yield** ERC-20 pairs,
-  one pair per `(startNonce, targetNonce)` yield-event window. Yield claims are
-  **frozen at the window's expiry nonce** from historical checkpoints only; the
-  current multiplier is never read, so later dividends price nothing for an ended
-  window.
+## Why this exists
 
-### Redemption
+EIP-8056 adjusts a single UI multiplier, so the **reason** for a change is
+indistinguishable: a 2-for-1 split (supply change) and a dividend reinvestment
+(yield accretion) both move the same number. That makes it impossible to split
+a token into principal + yield on-chain, which is exactly what lending,
+options, and auction protocols need for RWA like Robinhood stock tokens.
+
+This repo adds named scaling classes and a wrapper that turns the
+yield-scaling history into a Capital/Yield split with **event-based expiry**,
+solving the case where real-world yield accrues in discrete events (dividends)
+rather than continuously. See [MOTIVATION](docs/MOTIVATION.md) and
+[TECHNICAL](docs/TECHNICAL.md).
+
+## Quickstart
+
+### Requirements
+
+- [Foundry](https://book.getfoundry.sh/getting-started/installation) (`forge`, `cast`) — the only toolchain dependency.
+- Solidity 0.8.24 (pinned in `foundry.toml`).
+
+### Install & build
+
+```shell
+# Install Foundry (skip if already installed)
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
+
+# Clone and build
+git clone https://github.com/SolidityDrone/ERC8056-b.git
+cd ERC8056-b
+forge build
+```
+
+Submodules (`openzeppelin-contracts`, `forge-std`) are fetched on first build.
+
+### Run the tests
+
+```shell
+forge test          # full suite
+forge fmt --check   # formatting
+forge build         # compile
+```
+
+The invariant suite (solvency, frozen claims, no-stuck-raw) runs 256 sequences
+of 100 handler calls (~70 s) and is configured in `foundry.toml`.
+
+### Deploy
+
+```shell
+forge script script/DeployERC8056.s.sol --rpc-url <RPC> --broadcast
+forge script script/DeployERC8056TokenClasses.s.sol --rpc-url <RPC> --broadcast
+```
+
+## Layout
+
+```
+.
+├── foundry.toml                 # build/test/invariant config (solc 0.8.24)
+├── src/
+│   ├── ERC8056.sol              # base EIP-8056 reference implementation
+│   ├── ERC8056TokenClasses.sol  # class-decomposed extension
+│   ├── ERC8056PairWrapper.sol   # Capital/Yield window wrapper (standalone)
+│   ├── interfaces/
+│   │   ├── IERC8056.sol            # core 8056 interface
+│   │   ├── IERC8056Conversion.sol  # toUIAmount/fromUIAmount
+│   │   ├── IERC8056Balances.sol    # balanceOfUI/totalSupplyUI
+│   │   ├── IERC8056NewUIMultiplier.sol # newUIMultiplier/effectiveAt
+│   │   ├── IERC8056TokenClasses.sol   # class extension interface
+│   │   └── UIScalingClass.sol        # enum { Supply, Yield, Other }
+│   ├── libraries/
+│   │   └── UIScalingMath.sol     # canonical composite math
+│   └── tokens/
+│       ├── CapitalToken.sol      # principal-leg ERC-20 receipt
+│       └── YieldToken.sol        # yield-leg ERC-20 receipt
+├── script/                       # deploy scripts
+├── test/                         # unit, fuzz, and invariant suites
+├── docs/
+│   ├── MOTIVATION.md             # why this proposal exists
+│   └── TECHNICAL.md              # extension spec, expiry, use cases
+└── PROPOSAL.md                   # Ethereum Magicians proposal draft
+```
+
+## Scaling classes
+
+```
+uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
+```
+
+- **Supply** — splits, reverse splits, ADR ratio changes, redenomination. Same economics, different count.
+- **Yield** — dividends, DRIP, distributions, pro-rata buyback benefit. The backing pool grew pro-rata. **Only** this class ticks the wrapper's yield nonce / coupon.
+- **Other** — fees, taxes, governance re-denominations. Composes into the total but does not drive the wrapper's pricing.
+
+## Interface surface
+
+### Legacy EIP-8056 (unchanged)
+
+| Interface | Methods |
+|-----------|---------|
+| `IERC8056` | `uiMultiplier()`, `UIMultiplierUpdated`, `TransferWithUIAmount` |
+| `IERC8056NewUIMultiplier` | `newUIMultiplier()`, `effectiveAt()` |
+| `IERC8056Conversion` | `toUIAmount(uint256)`, `fromUIAmount(uint256)` |
+| `IERC8056Balances` | `balanceOfUI(address)`, `totalSupplyUI()` |
+
+### Extension (class decomposition)
+
+| Interface | Methods |
+|-----------|---------|
+| `IERC8056TokenClasses` | per-class `uiScalingFactor*`, `uiMultiplierAt`, pending/history views, `yieldNonce()`, `yieldEventAt(nonce)`, `setUIScalingFactor`, `applyUIScalingDelta` |
+| `ERC8056TokenClasses` | per-class `toUIAmount(raw, class)`, `toUIAmountAt`, `fromUIAmount` |
+| `UIScalingMath` | `composeUiMultiplier(Supply, Yield, Other)` |
+
+## Redemption model
 
 | Action | Payoff | Gate |
 |--------|--------|------|
@@ -22,75 +129,11 @@ A Foundry (Solidity 0.8.24) implementation of **EIP-8056** UI scaling with a
 | `unwrapYield` | `amount * coupon` | `yieldNonce() >= target` |
 | `unwrapCapital` | `amount * (1 - coupon)` | `yieldNonce() >= target` |
 
-Where coupon = `max(1 - Y_start / Y_target, 0)` in 1e18 fixed point. Because
-`coupon + share = 1`, every pair's total claim equals its deposit and the shared
-raw vault stays solvent by construction.
+Where `coupon = max(1 - Y_start / Y_target, 0)` in 1e18 fixed point, frozen at
+the target nonce from historical checkpoints only. Because `coupon + share = 1`,
+every pair's total claim equals its deposit and the shared raw vault stays
+solvent by construction.
 
-## Scaling classes
+## License
 
-`UIScalingClass { Supply, Yield, Other }`. The composite UI multiplier is the
-product of all three:
-
-```
-uiMultiplier = Supply × Yield × Other
-```
-
-- `Supply` — off-chain supply / denomination events (splits, reverse splits,
-  ADR ratio changes, unit redenomination).
-- `Yield` — off-chain accretion (dividend reinvestment, DRIP, distributions,
-  pro-rata buyback benefit). Drives the wrapper's yield nonce / coupon.
-- `Other` — any additional display-scaling dimension (fees, taxes, governance
-  re-denominations). Composes into the total but does **not** tick the yield
-  nonce or affect wrapper pricing.
-
-## Interface surface
-
-### Legacy — EIP-8056 core & optional extensions (unchanged)
-
-| Interface | Methods | Status |
-|-----------|---------|--------|
-| `IERC8056` | `uiMultiplier()`, event `UIMultiplierUpdated`, event `TransferWithUIAmount` | required |
-| `IERC8056NewUIMultiplier` | `newUIMultiplier()`, `effectiveAt()` | required |
-| `IERC8056Conversion` | `toUIAmount(uint256)`, `fromUIAmount(uint256)` | optional |
-| `IERC8056Balances` | `balanceOfUI(address)`, `totalSupplyUI()` | optional |
-
-### New — class decomposition (this repo's extension)
-
-| Interface | Methods | Notes |
-|-----------|---------|-------|
-| `IERC8056TokenClasses` | `uiScalingFactor(UIScalingClass)` | per-class cumulative factor |
-| | `uiScalingFactorAt(UIScalingClass, uint256)` | per-class factor at a timestamp |
-| | `uiMultiplierAt(uint256)` | composite at a timestamp |
-| | `pendingUIScalingFactor(UIScalingClass)` | pending factor |
-| | `scalingFactorEffectiveAt(UIScalingClass)` | when pending becomes active |
-| | `hasPendingScalingFactor(UIScalingClass)` | pending check |
-| | `scalingHistoryLength(UIScalingClass)` | checkpoint count |
-| | `scalingCheckpointAt(UIScalingClass, uint256)` | checkpoint read |
-| | `yieldNonce()` | effective yield-event count |
-| | `yieldEventAt(uint256)` | yield event (timestamp, multiplier) |
-| | `setUIScalingFactor(UIScalingClass, uint256, uint256)` | schedule absolute factor |
-| | `applyUIScalingDelta(UIScalingClass, uint256, uint256)` | schedule relative delta |
-| `ERC8056TokenClasses` | `toUIAmount(uint256, UIScalingClass)` | per-class conversion overload |
-| | `toUIAmountAt(uint256, UIScalingClass, uint256)` | per-class, at timestamp |
-| | `fromUIAmount(uint256, UIScalingClass)` | per-class inverse |
-| `UIScalingMath` | `composeUiMultiplier(Supply, Yield, Other)` | canonical composite |
-
-## Usage
-
-```shell
-forge build
-forge test
-forge fmt --check
-```
-
-Invariant suite (solvency, frozen claims, no-stuck-raw) runs 256 sequences of
-100 handler calls (~70s).
-
-## Layout
-
-- `src/ERC8056PairWrapper.sol` — the wrapper
-- `src/ERC8056TokenClasses.sol` — the scaling extension
-- `src/ERC8056.sol` — the base EIP-8056 reference implementation
-- `src/libraries/UIScalingMath.sol`, `src/tokens/`, `src/interfaces/`
-- `test/` — unit, fuzz, and invariant suites
-- `script/` — deploy scripts
+[MIT](LICENSE) — fully open source.
