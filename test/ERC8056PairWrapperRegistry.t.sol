@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC8056Composite} from "../src/interfaces/extension/IERC8056Composite.sol";
 import {ERC8056Composite} from "../src/ERC8056Composite.sol";
 import {ERC8056PairWrapper} from "../src/wrapper/ERC8056PairWrapper.sol";
 import {ERC8056PairWrapperRegistry} from "../src/wrapper/ERC8056PairWrapperRegistry.sol";
@@ -77,6 +78,28 @@ contract ERC8056PairWrapperRegistryTest is ScalingTestBase {
         registry.deployOrGet(bogus, ERC8056Composite(address(bogus)), "B", "B");
     }
 
+    function test_DeployOrGet_GrieferCannotSquatMetadata() public {
+        // A standard ERC-20 with real metadata: whoever calls deployOrGet first,
+        // the wrapper's display metadata MUST come from the underlying itself.
+        ERC8056Composite realAsset = new ERC8056Composite("Real Asset", "RASS", owner);
+
+        vm.prank(makeAddr("attacker"));
+        IERC8056PairWrapper w = registry.deployOrGet(IERC20(address(realAsset)), realAsset, "SCAM", "SCM");
+
+        assertEq(w.assetName(), "Real Asset", "first caller cannot squat name");
+        assertEq(w.assetSymbol(), "RASS", "first caller cannot squat symbol");
+    }
+
+    function test_DeployOrGet_FallsBackToSuppliedStrings_WhenUnderlyingHasNoMetadata() public {
+        MetadatalessComposite bare = new MetadatalessComposite();
+
+        IERC8056PairWrapper w =
+            registry.deployOrGet(IERC20(address(bare)), IERC8056Composite(address(bare)), "Fallback Name", "FBN");
+
+        assertEq(w.assetName(), "Fallback Name", "falls back to supplied name");
+        assertEq(w.assetSymbol(), "FBN", "falls back to supplied symbol");
+    }
+
     function test_DeployedWrapper_IsUsable() public {
         IERC8056PairWrapper w = registry.deployOrGet(IERC20(address(underlying)), underlying, "Tesla", "Tesla");
 
@@ -109,5 +132,14 @@ contract BogusToken {
     constructor(string memory name_, string memory symbol_) {
         name = name_;
         symbol = symbol_;
+    }
+}
+
+/// @dev An IERC8056Composite-supporting underlying with NO ERC-20 metadata
+///      (no name()/symbol()/decimals()); deployOrGet must fall back to the
+///      caller-supplied strings for display metadata.
+contract MetadatalessComposite {
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC8056Composite).interfaceId;
     }
 }

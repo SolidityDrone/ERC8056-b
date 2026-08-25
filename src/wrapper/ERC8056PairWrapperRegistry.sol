@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC8056Composite} from "../interfaces/extension/IERC8056Composite.sol";
 import {IERC8056PairWrapper} from "../interfaces/wrapper/IERC8056PairWrapper.sol";
@@ -46,7 +47,20 @@ contract ERC8056PairWrapperRegistry is IERC8056PairWrapperRegistry {
         if (address(scaledUnderlying) != address(underlying)) revert ExtensionMismatch();
         if (!_supportsComposite(address(scaledUnderlying))) revert UnsupportedExtension();
 
-        ERC8056PairWrapper wrapper = new ERC8056PairWrapper(underlying, scaledUnderlying, name, symbol);
+        // Display metadata is derived from the underlying itself so the FIRST
+        // caller cannot squat misleading name/symbol on a standard token; the
+        // `name`/`symbol` params are used ONLY when the underlying lacks
+        // ERC-20 metadata (or the call reverts).
+        string memory derivedName = name;
+        string memory derivedSymbol = symbol;
+        try IERC20Metadata(address(underlying)).name() returns (string memory n) {
+            derivedName = n;
+        } catch {}
+        try IERC20Metadata(address(underlying)).symbol() returns (string memory s) {
+            derivedSymbol = s;
+        } catch {}
+
+        ERC8056PairWrapper wrapper = new ERC8056PairWrapper(underlying, scaledUnderlying, derivedName, derivedSymbol);
         IERC8056PairWrapper canonical = IERC8056PairWrapper(address(wrapper));
 
         _wrappers[address(underlying)] = canonical;

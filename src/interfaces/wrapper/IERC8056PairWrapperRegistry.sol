@@ -28,8 +28,12 @@ interface IERC8056PairWrapperRegistry {
     /// @param scaledUnderlying The ERC-8056 class-decomposed extension the wrapper reads
     ///                         yield history from. MUST be the same contract as `underlying`;
     ///                         validated via ERC-165.
-    /// @param name             Asset display name (prefixes the Capital/Yield token names).
-    /// @param symbol           Asset display symbol.
+    /// @param name             FALLBACK-ONLY display name: used only when `underlying`
+    ///                         lacks ERC-20 metadata (name()/symbol() absent or reverting);
+    ///                         otherwise ignored in favor of `underlying.name()`. This
+    ///                         prevents the first caller from squatting misleading
+    ///                         metadata on standard tokens.
+    /// @param symbol           FALLBACK-ONLY display symbol (same rules as `name`).
     /// @dev Reverts ExtensionMismatch if `scaledUnderlying != underlying`;
     ///      reverts UnsupportedExtension if it does not report IERC8056Composite via ERC-165.
     function deployOrGet(
