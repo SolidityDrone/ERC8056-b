@@ -3,15 +3,15 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {ERC8056PairWrapper} from "../src/ERC8056PairWrapper.sol";
-import {IERC8056PairWrapper} from "../src/interfaces/IERC8056PairWrapper.sol";
-import {ERC8056TokenClasses} from "../src/ERC8056TokenClasses.sol";
-import {UIScalingClass} from "../src/interfaces/UIScalingClass.sol";
+import {ERC8056PairWrapper} from "../src/wrapper/ERC8056PairWrapper.sol";
+import {IERC8056PairWrapper} from "../src/wrapper/interfaces/IERC8056PairWrapper.sol";
+import {ERC8056Composite} from "../src/extensions/ERC8056Composite.sol";
+import {UIScalingClass} from "../src/extensions/interfaces/UIScalingClass.sol";
 
 /// @dev Action handler for the wrapper invariant suite. Every entrypoint either
 ///      performs an operation or reverts; asserts inside handlers fail the suite.
 contract ERC8056PairWrapperHandler is Test {
-    ERC8056TokenClasses public immutable underlying;
+    ERC8056Composite public immutable underlying;
     ERC8056PairWrapper public immutable wrapper;
     address public immutable owner;
 
@@ -19,7 +19,7 @@ contract ERC8056PairWrapperHandler is Test {
     uint256 public totalRedeemed;
     uint256 public soloRedemptions;
 
-    constructor(ERC8056TokenClasses underlying_, ERC8056PairWrapper wrapper_, address owner_) {
+    constructor(ERC8056Composite underlying_, ERC8056PairWrapper wrapper_, address owner_) {
         underlying = underlying_;
         wrapper = wrapper_;
         owner = owner_;
@@ -119,7 +119,7 @@ contract ERC8056PairWrapperHandler is Test {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Yield, delta, block.timestamp + delay);
+        underlying.applyUIScalingDelta(UIScalingClass.Yield, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
@@ -127,7 +127,7 @@ contract ERC8056PairWrapperHandler is Test {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Supply, delta, block.timestamp + delay);
+        underlying.applyUIScalingDelta(UIScalingClass.Supply, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
@@ -135,7 +135,7 @@ contract ERC8056PairWrapperHandler is Test {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Other, delta, block.timestamp + delay);
+        underlying.applyUIScalingDelta(UIScalingClass.Other, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 }

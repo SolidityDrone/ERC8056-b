@@ -9,22 +9,22 @@ import {IERC8056} from "./interfaces/IERC8056.sol";
 import {IERC8056Conversion} from "./interfaces/IERC8056Conversion.sol";
 import {IERC8056Balances} from "./interfaces/IERC8056Balances.sol";
 import {IERC8056NewUIMultiplier} from "./interfaces/IERC8056NewUIMultiplier.sol";
-import {IERC8056TokenClasses} from "./interfaces/IERC8056TokenClasses.sol";
+import {IERC8056Composite} from "./interfaces/IERC8056Composite.sol";
 import {UIScalingClass} from "./interfaces/UIScalingClass.sol";
-import {UIScalingMath} from "./libraries/UIScalingMath.sol";
+import {UIScalingMath} from "../libraries/UIScalingMath.sol";
 
 /**
- * @title ERC8056TokenClasses
+ * @title ERC8056Composite
  * @notice EIP-8056 with Supply / Yield decomposed scaling, scheduling, and history.
  */
-contract ERC8056TokenClasses is
+contract ERC8056Composite is
     ERC20,
     ERC165,
     IERC8056,
     IERC8056Conversion,
     IERC8056Balances,
     IERC8056NewUIMultiplier,
-    IERC8056TokenClasses,
+    IERC8056Composite,
     Ownable
 {
     struct ClassScalingState {
@@ -38,6 +38,7 @@ contract ERC8056TokenClasses is
 
     mapping(UIScalingClass => ClassScalingState) private _classScaling;
     mapping(UIScalingClass => ScalingCheckpoint[]) private _checkpoints;
+    mapping(UIScalingClass => uint256) private _classNonces;
 
     constructor(string memory name_, string memory symbol_, address initialOwner)
         ERC20(name_, symbol_)
@@ -63,7 +64,7 @@ contract ERC8056TokenClasses is
         return interfaceId == type(IERC8056).interfaceId || interfaceId == type(IERC8056Conversion).interfaceId
             || interfaceId == type(IERC8056Balances).interfaceId
             || interfaceId == type(IERC8056NewUIMultiplier).interfaceId
-            || interfaceId == type(IERC8056TokenClasses).interfaceId || super.supportsInterface(interfaceId);
+            || interfaceId == type(IERC8056Composite).interfaceId || super.supportsInterface(interfaceId);
     }
 
     //==============================================================================//
@@ -152,26 +153,39 @@ contract ERC8056TokenClasses is
     //==============================================================================//
     // Class writes (enum required - no generic update)                             //
     //==============================================================================//
-    function setUIScalingFactor(UIScalingClass scalingClass, uint256 newFactor, uint256 effectiveAtTimestamp)
-        public
-        override
-        onlyOwner
-    {
-        _setScalingFactor(scalingClass, newFactor, effectiveAtTimestamp);
+    function setUIScalingFactor(
+        UIScalingClass scalingClass,
+        uint256 newFactor,
+        uint256 effectiveAtTimestamp,
+        string calldata id,
+        string calldata description,
+        string calldata uri
+    ) public override onlyOwner {
+        _setScalingFactor(scalingClass, newFactor, effectiveAtTimestamp, id, description, uri);
     }
 
-    function applyUIScalingDelta(UIScalingClass scalingClass, uint256 factorDelta, uint256 effectiveAtTimestamp)
-        external
-        override
-        onlyOwner
-    {
+    function applyUIScalingDelta(
+        UIScalingClass scalingClass,
+        uint256 factorDelta,
+        uint256 effectiveAtTimestamp,
+        string calldata id,
+        string calldata description,
+        string calldata uri
+    ) external override onlyOwner {
         require(factorDelta > 0, "ERC8056: delta must be positive");
         uint256 currentFactor = _currentFactorForDelta(scalingClass);
         uint256 newFactor = Math.mulDiv(currentFactor, factorDelta, UIScalingMath.MULTIPLIER_DECIMALS);
-        _setScalingFactor(scalingClass, newFactor, effectiveAtTimestamp);
+        _setScalingFactor(scalingClass, newFactor, effectiveAtTimestamp, id, description, uri);
     }
 
-    function _setScalingFactor(UIScalingClass scalingClass, uint256 newFactor, uint256 effectiveAtTimestamp) internal {
+    function _setScalingFactor(
+        UIScalingClass scalingClass,
+        uint256 newFactor,
+        uint256 effectiveAtTimestamp,
+        string calldata id,
+        string calldata description,
+        string calldata uri
+    ) internal {
         _validateScalingClass(scalingClass);
         require(newFactor > 0, "ERC8056: factor must be positive");
         require(effectiveAtTimestamp > block.timestamp, "ERC8056: effective time must be future");
@@ -192,7 +206,17 @@ contract ERC8056TokenClasses is
         state.effectiveAt = effectiveAtTimestamp;
         history.push(ScalingCheckpoint(effectiveAtTimestamp, newFactor));
 
-        emit UIScalingFactorUpdated(scalingClass, oldFactor, newFactor, effectiveAtTimestamp);
+        uint256 delta = oldFactor == 0 ? newFactor : newFactor * UIScalingMath.MULTIPLIER_DECIMALS / oldFactor;
+        uint256 nonce = ++_classNonces[scalingClass];
+
+        emit UIScalingFactorUpdated(
+            scalingClass,
+            newFactor,
+            delta,
+            effectiveAtTimestamp,
+            nonce,
+            Announcement({id: id, description: description, uri: uri})
+        );
         emit UIMultiplierUpdated(oldComposite, _compositeFromPending(), effectiveAtTimestamp);
     }
 

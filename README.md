@@ -6,8 +6,8 @@ decomposition to split an RWA token into **Capital** and **Yield** ERC-20 legs
 with nonce-based (event-based) expiration.
 
 - [`ERC8056`](src/ERC8056.sol) — the base EIP-8056 reference implementation (single composite multiplier).
-- [`ERC8056TokenClasses`](src/ERC8056TokenClasses.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and a per-class checkpoint history that also serves as the yield-event log.
-- [`ERC8056PairWrapper`](src/ERC8056PairWrapper.sol) — a standalone wrapper (WETH-for-ETH-style, i.e. a separate adapter contract rather than folded into the base token) that splits raw RWA into per-window `CapitalToken` / `YieldToken` ERC-20 pairs with frozen-delta, nonce-gated redemption. Protocols integrate against the stable [`IERC8056PairWrapper`](src/interfaces/IERC8056PairWrapper.sol) surface, discovered via the canonical [`ERC8056PairWrapperRegistry`](src/ERC8056PairWrapperRegistry.sol) — see [INTEGRATION](docs/INTEGRATION.md).
+- [`ERC8056Composite`](src/extensions/ERC8056Composite.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and a per-class checkpoint history that also serves as the yield-event log.
+- [`ERC8056PairWrapper`](src/wrapper/ERC8056PairWrapper.sol) — a standalone wrapper (WETH-for-ETH-style, i.e. a separate adapter contract rather than folded into the base token) that splits raw RWA into per-window `CapitalToken` / `YieldToken` ERC-20 pairs with frozen-delta, nonce-gated redemption. Protocols integrate against the stable [`IERC8056PairWrapper`](src/wrapper/interfaces/IERC8056PairWrapper.sol) surface, discovered via the canonical [`ERC8056PairWrapperRegistry`](src/wrapper/ERC8056PairWrapperRegistry.sol) — see [INTEGRATION](docs/INTEGRATION.md).
 
 ## Why this exists
 
@@ -62,39 +62,40 @@ of 100 handler calls (~70 s) and is configured in `foundry.toml`.
 
 ```shell
 forge script script/DeployERC8056.s.sol --rpc-url <RPC> --broadcast
-forge script script/DeployERC8056TokenClasses.s.sol --rpc-url <RPC> --broadcast
+forge script script/DeployERC8056Composite.s.sol --rpc-url <RPC> --broadcast
 ```
 
 ## Layout
 
 ```
 .
-├── foundry.toml                 # build/test/invariant config (solc 0.8.24)
+├── foundry.toml                    # build/test/invariant config (solc 0.8.24)
 ├── src/
-│   ├── ERC8056.sol              # base EIP-8056 reference implementation
-│   ├── ERC8056TokenClasses.sol  # class-decomposed extension
-│   ├── ERC8056PairWrapper.sol   # Capital/Yield window wrapper (standalone)
-│   ├── ERC8056PairWrapperRegistry.sol # canonical per-asset wrapper discovery
-│   ├── interfaces/
-│   │   ├── IERC8056.sol            # core 8056 interface
-│   │   ├── IERC8056Conversion.sol  # toUIAmount/fromUIAmount
-│   │   ├── IERC8056Balances.sol    # balanceOfUI/totalSupplyUI
-│   │   ├── IERC8056NewUIMultiplier.sol # newUIMultiplier/effectiveAt
-│   │   ├── IERC8056TokenClasses.sol   # class extension interface
-│   │   ├── IERC8056PairWrapper.sol   # wrapper integration surface
-│   │   ├── IERC8056PairWrapperRegistry.sol # registry surface
-│   │   └── UIScalingClass.sol        # enum { Supply, Yield, Other }
-│   ├── libraries/
-│   │   └── UIScalingMath.sol     # canonical composite math
-│   └── tokens/
-│       ├── CapitalToken.sol      # principal-leg ERC-20 receipt
-│       └── YieldToken.sol        # yield-leg ERC-20 receipt
-├── script/                       # deploy scripts
-├── test/                         # unit, fuzz, and invariant suites
+│   ├── ERC8056.sol                 # base EIP-8056 reference implementation
+│   ├── extensions/
+│   │   ├── ERC8056Composite.sol    # class-decomposed extension
+│   │   └── interfaces/
+│   │       ├── IERC8056.sol            # core 8056 interface
+│   │       ├── IERC8056Conversion.sol  # toUIAmount/fromUIAmount
+│   │       ├── IERC8056Balances.sol    # balanceOfUI/totalSupplyUI
+│   │       ├── IERC8056NewUIMultiplier.sol # newUIMultiplier/effectiveAt
+│   │       ├── IERC8056Composite.sol   # class extension interface
+│   │       └── UIScalingClass.sol      # enum { Supply, Yield, Other }
+│   ├── wrapper/
+│   │   ├── ERC8056PairWrapper.sol      # Capital/Yield window wrapper (standalone)
+│   │   ├── ERC8056PairWrapperRegistry.sol # canonical per-asset wrapper discovery
+│   │   ├── LegToken.sol               # fungible ERC-20 receipt (capital or yield leg)
+│   │   └── interfaces/
+│   │       ├── IERC8056PairWrapper.sol       # wrapper integration surface
+│   │       └── IERC8056PairWrapperRegistry.sol # registry surface
+│   └── libraries/
+│       └── UIScalingMath.sol           # canonical composite math
+├── script/                            # deploy scripts
+├── test/                              # unit, fuzz, and invariant suites
 ├── docs/
-│   ├── MOTIVATION.md             # why this proposal exists
-│   ├── TECHNICAL.md              # extension spec, expiry, use cases
-│   ├── INTEGRATION.md            # wrapper interface + registry guide
+│   ├── MOTIVATION.md                  # why this proposal exists
+│   ├── TECHNICAL.md                   # extension spec, expiry, use cases
+│   ├── INTEGRATION.md                 # wrapper interface + registry guide
 ```
 
 ## Scaling classes
@@ -122,8 +123,8 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 
 | Interface | Methods |
 |-----------|---------|
-| `IERC8056TokenClasses` | per-class `uiScalingFactor*`, `uiMultiplierAt`, pending/history views, `yieldNonce()`, `yieldEventAt(nonce)`, `setUIScalingFactor`, `applyUIScalingDelta` |
-| `ERC8056TokenClasses` | per-class `toUIAmount(raw, class)`, `toUIAmountAt`, `fromUIAmount` |
+| `IERC8056Composite` | per-class `uiScalingFactor*`, `uiMultiplierAt`, pending/history views, `yieldNonce()`, `yieldEventAt(nonce)`, `setUIScalingFactor`, `applyUIScalingDelta` |
+| `ERC8056Composite` | per-class `toUIAmount(raw, class)`, `toUIAmountAt`, `fromUIAmount` |
 | `UIScalingMath` | `composeUiMultiplier(Supply, Yield, Other)` |
 
 ### Wrapper & registry (integration surface)

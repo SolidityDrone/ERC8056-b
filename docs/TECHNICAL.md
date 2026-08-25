@@ -11,7 +11,7 @@ use cases the design enables.
 
 ### 1.1 What it adds
 
-The extension (`IERC8056TokenClasses`, implemented by `ERC8056TokenClasses`)
+The extension (`IERC8056Composite`, implemented by `ERC8056Composite`)
 keeps every EIP-8056 function untouched and adds:
 
 - **A named scaling-class enum** `UIScalingClass { Supply, Yield, Other }`.

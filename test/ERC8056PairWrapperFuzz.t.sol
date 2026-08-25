@@ -2,21 +2,21 @@
 pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
-import {ERC8056PairWrapper} from "../src/ERC8056PairWrapper.sol";
-import {ERC8056TokenClasses} from "../src/ERC8056TokenClasses.sol";
-import {UIScalingClass} from "../src/interfaces/UIScalingClass.sol";
+import {ERC8056PairWrapper} from "../src/wrapper/ERC8056PairWrapper.sol";
+import {ERC8056Composite} from "../src/extensions/ERC8056Composite.sol";
+import {UIScalingClass} from "../src/extensions/interfaces/UIScalingClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract ERC8056PairWrapperFuzzTest is ScalingTestBase {
-    ERC8056TokenClasses internal underlying;
+    ERC8056Composite internal underlying;
     ERC8056PairWrapper internal wrapper;
 
     address internal owner = makeAddr("owner");
     address internal alice = makeAddr("alice");
 
     function setUp() public {
-        underlying = new ERC8056TokenClasses("Stock", "STK", owner);
+        underlying = new ERC8056Composite("Stock", "STK", owner);
         wrapper = new ERC8056PairWrapper(IERC20(address(underlying)), underlying, "Tesla", "Tesla");
         vm.prank(owner);
         underlying.mint(alice, type(uint96).max);
@@ -27,7 +27,7 @@ contract ERC8056PairWrapperFuzzTest is ScalingTestBase {
 
     function _setYieldFactor(uint256 factor, uint256 delay) internal {
         vm.prank(owner);
-        underlying.setUIScalingFactor(UIScalingClass.Yield, factor, block.timestamp + delay);
+        underlying.setUIScalingFactor(UIScalingClass.Yield, factor, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
@@ -107,7 +107,12 @@ contract ERC8056PairWrapperFuzzTest is ScalingTestBase {
         for (uint256 i = 0; i < dividends; i++) {
             vm.prank(owner);
             underlying.applyUIScalingDelta(
-                UIScalingClass.Yield, bound(uint256(keccak256(abi.encode(i))), 5e17, 2e18), block.timestamp + 1 days
+                UIScalingClass.Yield,
+                bound(uint256(keccak256(abi.encode(i))), 5e17, 2e18),
+                block.timestamp + 1 days,
+                "",
+                "",
+                ""
             );
             vm.warp(block.timestamp + 1 days);
         }

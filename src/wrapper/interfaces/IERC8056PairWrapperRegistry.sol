@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC8056TokenClasses} from "./IERC8056TokenClasses.sol";
+import {IERC8056Composite} from "../../extensions/interfaces/IERC8056Composite.sol";
 import {IERC8056PairWrapper} from "./IERC8056PairWrapper.sol";
 
 /**
@@ -31,10 +31,10 @@ interface IERC8056PairWrapperRegistry {
     /// @param name             Asset display name (prefixes the Capital/Yield token names).
     /// @param symbol           Asset display symbol.
     /// @dev Reverts ExtensionMismatch if `scaledUnderlying != underlying`;
-    ///      reverts UnsupportedExtension if it does not report IERC8056TokenClasses via ERC-165.
+    ///      reverts UnsupportedExtension if it does not report IERC8056Composite via ERC-165.
     function deployOrGet(
         IERC20 underlying,
-        IERC8056TokenClasses scaledUnderlying,
+        IERC8056Composite scaledUnderlying,
         string calldata name,
         string calldata symbol
     ) external returns (IERC8056PairWrapper);
@@ -49,6 +49,6 @@ interface IERC8056PairWrapperRegistry {
     function underlyingOf(IERC8056PairWrapper wrapper) external view returns (IERC20);
 
     event PairWrapperDeployed(
-        IERC20 indexed underlying, IERC8056TokenClasses indexed scaledUnderlying, IERC8056PairWrapper wrapper
+        IERC20 indexed underlying, IERC8056Composite indexed scaledUnderlying, IERC8056PairWrapper wrapper
     );
 }

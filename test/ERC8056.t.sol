@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC8056} from "../src/ERC8056.sol";
-import {IERC8056} from "../src/interfaces/IERC8056.sol";
+import {IERC8056} from "../src/extensions/interfaces/IERC8056.sol";
 
 contract ERC8056Test is Test {
     ERC8056 internal token;

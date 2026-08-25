@@ -10,7 +10,7 @@ import {UIScalingClass} from "./UIScalingClass.sol";
  * monolithic multiplier update entrypoint. The composite {IERC8056-uiMultiplier}
  * is always derived as the product of every class factor (Supply × Yield × Other).
  */
-interface IERC8056TokenClasses {
+interface IERC8056Composite {
     struct ScalingCheckpoint {
         uint256 effectiveAt;
         uint256 cumulativeFactor;
@@ -21,8 +21,19 @@ interface IERC8056TokenClasses {
         uint256 multiplier;
     }
 
+    struct Announcement {
+        string id;
+        string description;
+        string uri;
+    }
+
     event UIScalingFactorUpdated(
-        UIScalingClass indexed scalingClass, uint256 oldFactor, uint256 newFactor, uint256 effectiveAtTimestamp
+        UIScalingClass indexed scalingClass,
+        uint256 newFactor,
+        uint256 factorDelta,
+        uint256 effectiveAtTimestamp,
+        uint256 classNonce,
+        Announcement announcement
     );
 
     /// @dev Current cumulative factor for `scalingClass` (1e18 = 1.0x).
@@ -65,9 +76,22 @@ interface IERC8056TokenClasses {
      * Supply example: 2-for-1 split sets factor from 1e18 to 2e18.
      * Yield example: reinvestment sets factor from 1e18 to 1.05e18.
      */
-    function setUIScalingFactor(UIScalingClass scalingClass, uint256 newFactor, uint256 effectiveAtTimestamp) external;
+    function setUIScalingFactor(
+        UIScalingClass scalingClass,
+        uint256 newFactor,
+        uint256 effectiveAtTimestamp,
+        string calldata id,
+        string calldata description,
+        string calldata uri
+    ) external;
 
     /// @dev Schedule a relative delta: `newFactor = current * factorDelta / 1e18`.
-    function applyUIScalingDelta(UIScalingClass scalingClass, uint256 factorDelta, uint256 effectiveAtTimestamp)
-        external;
+    function applyUIScalingDelta(
+        UIScalingClass scalingClass,
+        uint256 factorDelta,
+        uint256 effectiveAtTimestamp,
+        string calldata id,
+        string calldata description,
+        string calldata uri
+    ) external;
 }

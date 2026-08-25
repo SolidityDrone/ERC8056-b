@@ -2,12 +2,12 @@
 pragma solidity ^0.8.24;
 
 import {Script} from "forge-std/Script.sol";
-import {ERC8056TokenClasses} from "../src/ERC8056TokenClasses.sol";
+import {ERC8056Composite} from "../src/extensions/ERC8056Composite.sol";
 
-contract DeployERC8056TokenClasses is Script {
+contract DeployERC8056Composite is Script {
     function run() external {
         vm.startBroadcast();
-        new ERC8056TokenClasses("Classed UI Token", "CUI", msg.sender);
+        new ERC8056Composite("Classed UI Token", "CUI", msg.sender);
         vm.stopBroadcast();
     }
 }

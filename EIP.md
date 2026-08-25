@@ -17,7 +17,7 @@ This proposal extends [ERC-8056](./eip-8056.md) (Scaled UI Amount Extension) by 
 
 The critical consequence: every on-chain event carries **the reason it happened** -- whether a multiplier move was a denomination change or a genuine yield accretion. This enables a **Capital/Yield split** for tokenized real-world assets (RWAs): the class decomposition and checkpoint history serve as the raw material for a deterministic, event-accurate separation of a token into principal and yield components.
 
-This EIP specifies the extension interface (`IERC8056TokenClasses`), the scaling-class enum (`UIScalingClass`), and the normative requirements for per-class factor storage, checkpoint recording, and yield-event derivation. A reference implementation is provided.
+This EIP specifies the extension interface (`IERC8056Composite`), the scaling-class enum (`UIScalingClass`), and the normative requirements for per-class factor storage, checkpoint recording, and yield-event derivation. A reference implementation is provided.
 
 A standalone Capital/Yield wrapper contract (`ERC8056PairWrapper`) and a canonical per-asset registry (`ERC8056PairWrapperRegistry`) are included as **practical reference implementations** -- optional consumer surfaces that demonstrate how the extension enables on-chain principal/yield decomposition. They are not part of the normative standard.
 
@@ -101,12 +101,12 @@ enum UIScalingClass {
 | `Yield` | dividend, DRIP, distribution, buyback | pool grew pro-rata | **drives nonce + coupon** |
 | `Other` | fees, taxes, governance re-denominations | mixed | composes, no pricing |
 
-Implementations SHOULD NOT add additional enum values without a formal amendment to this EIP, as it would break the `composeUiMultiplier` product semantics and the `IERC8056TokenClasses` interface ID.
+Implementations SHOULD NOT add additional enum values without a formal amendment to this EIP, as it would break the `composeUiMultiplier` product semantics and the `IERC8056Composite` interface ID.
 
-### Interface: `IERC8056TokenClasses`
+### Interface: `IERC8056Composite`
 
 ```solidity
-interface IERC8056TokenClasses {
+interface IERC8056Composite {
     struct ScalingCheckpoint {
         uint256 effectiveAt;
         uint256 cumulativeFactor;
@@ -117,11 +117,19 @@ interface IERC8056TokenClasses {
         uint256 multiplier;
     }
 
+    struct Announcement {
+        string id;
+        string description;
+        string uri;
+    }
+
     event UIScalingFactorUpdated(
         UIScalingClass indexed scalingClass,
-        uint256 oldFactor,
         uint256 newFactor,
-        uint256 effectiveAtTimestamp
+        uint256 factorDelta,
+        uint256 effectiveAtTimestamp,
+        uint256 classNonce,
+        Announcement announcement
     );
 
     // ---- Per-class factor reads ----
@@ -152,13 +160,19 @@ interface IERC8056TokenClasses {
     function setUIScalingFactor(
         UIScalingClass scalingClass,
         uint256 newFactor,
-        uint256 effectiveAtTimestamp
+        uint256 effectiveAtTimestamp,
+        string calldata id,
+        string calldata description,
+        string calldata uri
     ) external;
 
     function applyUIScalingDelta(
         UIScalingClass scalingClass,
         uint256 factorDelta,
-        uint256 effectiveAtTimestamp
+        uint256 effectiveAtTimestamp,
+        string calldata id,
+        string calldata description,
+        string calldata uri
     ) external;
 }
 ```
@@ -187,10 +201,10 @@ interface IERC8056TokenClasses {
 
 #### Scheduled (pending) updates
 
-12. `setUIScalingFactor(class, newFactor, effectiveAtTimestamp)` MUST schedule an absolute cumulative factor. `effectiveAtTimestamp` MUST be in the future.
-13. `applyUIScalingDelta(class, factorDelta, effectiveAtTimestamp)` MUST schedule a relative update: `newFactor = current * factorDelta / 1e18`, where `current` is the effective factor at the time of the call.
+12. `setUIScalingFactor(class, newFactor, effectiveAtTimestamp, id, description, uri)` MUST schedule an absolute cumulative factor. `effectiveAtTimestamp` MUST be in the future.
+13. `applyUIScalingDelta(class, factorDelta, effectiveAtTimestamp, id, description, uri)` MUST schedule a relative update: `newFactor = current * factorDelta / 1e18`, where `current` is the effective factor at the time of the call.
 14. A pending update MUST NOT affect the current effective factor or the composite multiplier until `effectiveAt` is reached.
-15. `UIScalingFactorUpdated` MUST be emitted when a factor is scheduled, with `{oldFactor, newFactor, effectiveAtTimestamp}`.
+15. `UIScalingFactorUpdated` MUST be emitted when a factor is scheduled, with `{newFactor, factorDelta, effectiveAtTimestamp, classNonce, announcement}`.
 
 #### Yield-event derivation
 
@@ -201,19 +215,19 @@ interface IERC8056TokenClasses {
 
 #### ERC-165
 
-20. Contracts implementing this extension MUST implement ERC-165 and return `true` for the `IERC8056TokenClasses` interface ID.
+20. Contracts implementing this extension MUST implement ERC-165 and return `true` for the `IERC8056Composite` interface ID.
 
 ### Interface IDs
 
 | Interface | ID |
 |-----------|----|
-| `IERC8056TokenClasses` | computed via `type(IERC8056TokenClasses).interfaceId` |
+| `IERC8056Composite` | computed via `type(IERC8056Composite).interfaceId` |
 
 Implementations that also implement the base ERC-8056 interfaces MUST report those interface IDs via ERC-165 as well.
 
 ### No explicit prohibition on additional classes
 
-This EIP defines three classes (`Supply`, `Yield`, `Other`) as the standard decomposition. Implementations MUST NOT add enum values that would alter the `IERC8056TokenClasses` interface ID or break the `composeUiMultiplier` product semantics without a formal amendment. However, implementations MAY extend the contract with additional internal bookkeeping (e.g., sub-class tracking) as long as the normative interface is preserved.
+This EIP defines three classes (`Supply`, `Yield`, `Other`) as the standard decomposition. Implementations MUST NOT add enum values that would alter the `IERC8056Composite` interface ID or break the `composeUiMultiplier` product semantics without a formal amendment. However, implementations MAY extend the contract with additional internal bookkeeping (e.g., sub-class tracking) as long as the normative interface is preserved.
 
 ## Rationale
 
@@ -251,9 +265,9 @@ The Capital/Yield split is implemented as a standalone wrapper (`ERC8056PairWrap
 
 The full reference implementation is available at [github.com/SolidityDrone/ERC8056-b](https://github.com/SolidityDrone/ERC8056-b). It consists of:
 
-- `ERC8056TokenClasses.sol` -- the class-decomposed extension contract.
+- `ERC8056Composite.sol` -- the class-decomposed extension contract.
 - `UIScalingMath.sol` -- canonical composite math library.
-- `IERC8056TokenClasses.sol` -- the extension interface.
+- `IERC8056Composite.sol` -- the extension interface.
 - `UIScalingClass.sol` -- the scaling-class enum.
 - `ERC8056PairWrapper.sol` -- the Capital/Yield wrapper (reference consumer).
 - `ERC8056PairWrapperRegistry.sol` -- canonical per-asset wrapper discovery.
@@ -262,7 +276,7 @@ The full reference implementation is available at [github.com/SolidityDrone/ERC8
 ### Extension contract (summary)
 
 ```solidity
-contract ERC8056TokenClasses is ERC20, ERC165, IERC8056TokenClasses, Ownable {
+contract ERC8056Composite is ERC20, ERC165, IERC8056Composite, Ownable {
     struct ClassScalingState {
         uint256 activeFactor;
         uint256 pendingFactor;
@@ -272,6 +286,7 @@ contract ERC8056TokenClasses is ERC20, ERC165, IERC8056TokenClasses, Ownable {
     uint256 private constant MULTIPLIER_DECIMALS = 1e18;
     mapping(UIScalingClass => ClassScalingState) private _classState;
     mapping(UIScalingClass => ScalingCheckpoint[]) private _checkpoints;
+    mapping(UIScalingClass => uint256) private _classNonces;
     mapping(UIScalingClass => bool) private _hasPending;
 
     function uiMultiplier() public view returns (uint256) {
@@ -321,9 +336,9 @@ Where `coupon = max(1 - Y_start / Y_target, 0)` in 1e18 fixed point, frozen at h
 
 This EIP extends ERC-8056. It does not modify the existing `IERC8056`, `IScaledUIAmountConversion`, `IScaledUIAmountBalances`, or `IScaledUIAmountNewUIMultiplier` interfaces. Contracts that implement only the base ERC-8056 interfaces remain compliant.
 
-The `IERC8056TokenClasses` interface is additive. The composite `uiMultiplier()` function retains its signature and semantics -- it is simply derived from three class factors instead of a stored scalar. Off-chain consumers that read `uiMultiplier()` see no difference.
+The `IERC8056Composite` interface is additive. The composite `uiMultiplier()` function retains its signature and semantics -- it is simply derived from three class factors instead of a stored scalar. Off-chain consumers that read `uiMultiplier()` see no difference.
 
-The `UIScalingClass` enum and `IERC8056TokenClasses` interface ID are new. Contracts that adopt this extension gain new ERC-165 interface IDs alongside the existing ERC-8056 IDs.
+The `UIScalingClass` enum and `IERC8056Composite` interface ID are new. Contracts that adopt this extension gain new ERC-165 interface IDs alongside the existing ERC-8056 IDs.
 
 The Capital/Yield wrapper and registry are optional consumer contracts. They do not alter the base token's behavior.
 

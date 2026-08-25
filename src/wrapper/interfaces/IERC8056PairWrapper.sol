@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC8056TokenClasses} from "./IERC8056TokenClasses.sol";
+import {IERC8056Composite} from "../../extensions/interfaces/IERC8056Composite.sol";
 
 /**
  * @title IERC8056PairWrapper
@@ -47,7 +47,7 @@ interface IERC8056PairWrapper {
     function underlying() external view returns (IERC20);
 
     /// @dev Class-decomposed extension the wrapper reads yield history from.
-    function scaledUnderlying() external view returns (IERC8056TokenClasses);
+    function scaledUnderlying() external view returns (IERC8056Composite);
 
     /// @dev Display name / symbol for the wrapped asset.
     function assetName() external view returns (string memory);

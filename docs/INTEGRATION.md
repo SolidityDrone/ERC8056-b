@@ -7,9 +7,9 @@ that need a **principal leg** and a **yield leg** of the same raw RWA token.
 It defines two stable, optional surfaces (they are reference components of the
 EIP, not separate standards):
 
-1. [`IERC8056PairWrapper`](../src/interfaces/IERC8056PairWrapper.sol) — the
+1. [`IERC8056PairWrapper`](../src/wrapper/interfaces/IERC8056PairWrapper.sol) — the
    per-asset singleton wrapper: split, redemption, and pricing.
-2. [`ERC8056PairWrapperRegistry`](../src/ERC8056PairWrapperRegistry.sol) — the
+2. [`ERC8056PairWrapperRegistry`](../src/wrapper/ERC8056PairWrapperRegistry.sol) — the
    canonical per-asset discovery: one wrapper per raw token, so every protocol
    integrates against the *same* address for a given asset.
 
@@ -53,8 +53,8 @@ Protocols should **never** hardcode or guess wrapper addresses. Ask the
 registry instead.
 
 ```solidity
-import {IERC8056PairWrapperRegistry} from "../src/interfaces/IERC8056PairWrapperRegistry.sol";
-import {IERC8056PairWrapper} from "../src/interfaces/IERC8056PairWrapper.sol";
+import {IERC8056PairWrapperRegistry} from "../src/wrapper/interfaces/IERC8056PairWrapperRegistry.sol";
+import {IERC8056PairWrapper} from "../src/wrapper/interfaces/IERC8056PairWrapper.sol";
 
 IERC8056PairWrapperRegistry registry = /* canonical registry address */;
 
@@ -81,7 +81,7 @@ IERC8056PairWrapper w = registry.deployOrGet(
 
 `deployOrGet` reverts `ExtensionMismatch` if `scaledUnderlying` is not the same
 contract as `underlying`, and `UnsupportedExtension` if that contract does not
-report `IERC8056TokenClasses` via ERC-165. Binding the two prevents a third
+report `IERC8056Composite` via ERC-165. Binding the two prevents a third
 party from front-running registration and pricing the canonical wrapper's
 redemptions off an untrusted extension.
 
@@ -215,8 +215,8 @@ window.
 
 ## 7. References
 
-- Interface: [`IERC8056PairWrapper.sol`](../src/interfaces/IERC8056PairWrapper.sol)
-- Registry: [`IERC8056PairWrapperRegistry.sol`](../src/interfaces/IERC8056PairWrapperRegistry.sol), [`ERC8056PairWrapperRegistry.sol`](../src/ERC8056PairWrapperRegistry.sol)
-- Implementation: [`ERC8056PairWrapper.sol`](../src/ERC8056PairWrapper.sol)
-- Extension: [`IERC8056TokenClasses.sol`](../src/interfaces/IERC8056TokenClasses.sol)
+- Interface: [`IERC8056PairWrapper.sol`](../src/wrapper/interfaces/IERC8056PairWrapper.sol)
+- Registry: [`IERC8056PairWrapperRegistry.sol`](../src/wrapper/interfaces/IERC8056PairWrapperRegistry.sol), [`ERC8056PairWrapperRegistry.sol`](../src/wrapper/ERC8056PairWrapperRegistry.sol)
+- Implementation: [`ERC8056PairWrapper.sol`](../src/wrapper/ERC8056PairWrapper.sol)
+- Extension: [`IERC8056Composite.sol`](../src/extensions/interfaces/IERC8056Composite.sol)
 - Tests: [`ERC8056PairWrapper.t.sol`](../test/ERC8056PairWrapper.t.sol), [`ERC8056PairWrapperRegistry.t.sol`](../test/ERC8056PairWrapperRegistry.t.sol)

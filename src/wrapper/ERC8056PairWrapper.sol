@@ -5,12 +5,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {IERC8056TokenClasses} from "./interfaces/IERC8056TokenClasses.sol";
+import {IERC8056Composite} from "../extensions/interfaces/IERC8056Composite.sol";
 import {IERC8056PairWrapper} from "./interfaces/IERC8056PairWrapper.sol";
-import {UIScalingClass} from "./interfaces/UIScalingClass.sol";
-import {UIScalingMath} from "./libraries/UIScalingMath.sol";
-import {CapitalToken} from "./tokens/CapitalToken.sol";
-import {YieldToken} from "./tokens/YieldToken.sol";
+import {UIScalingClass} from "../extensions/interfaces/UIScalingClass.sol";
+import {UIScalingMath} from "../libraries/UIScalingMath.sol";
+import {LegToken} from "./LegToken.sol";
 
 /**
  * @title ERC8056PairWrapper
@@ -42,7 +41,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable override underlying;
-    IERC8056TokenClasses public immutable override scaledUnderlying;
+    IERC8056Composite public immutable override scaledUnderlying;
     string public override assetName;
     string public override assetSymbol;
 
@@ -57,7 +56,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
 
     constructor(
         IERC20 underlying_,
-        IERC8056TokenClasses scaledUnderlying_,
+        IERC8056Composite scaledUnderlying_,
         string memory assetName_,
         string memory assetSymbol_
     ) {
@@ -81,17 +80,16 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
         IERC8056PairWrapper.Pair storage pair = _pairs[startNonce][targetNonce];
         if (address(pair.capital) == address(0)) {
             string memory suffix = string.concat(Strings.toString(startNonce), "-", Strings.toString(targetNonce));
-            pair.capital =
-                new CapitalToken(string.concat("Capital-", suffix), string.concat("Cap", suffix), address(this));
-            pair.yield = new YieldToken(string.concat("Yield-", suffix), string.concat("Yld", suffix), address(this));
+            pair.capital = new LegToken(string.concat("Capital-", suffix), string.concat("Cap", suffix), address(this));
+            pair.yield = new LegToken(string.concat("Yield-", suffix), string.concat("Yld", suffix), address(this));
             _pairStarts.push(startNonce);
             _pairTargets.push(targetNonce);
         }
 
         rawLocked += rawAmount;
         underlying.safeTransferFrom(msg.sender, address(this), rawAmount);
-        _capital(pair).mint(msg.sender, rawAmount);
-        _yield(pair).mint(msg.sender, rawAmount);
+        _capitalLeg(pair).mint(msg.sender, rawAmount);
+        _yieldLeg(pair).mint(msg.sender, rawAmount);
 
         emit Wrapped(msg.sender, rawAmount, startNonce, targetNonce);
     }
@@ -108,8 +106,8 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
 
         (uint256 capitalRawOut, uint256 yieldLegRawOut) = _previewUnwrap(amount, startNonce, targetNonce);
 
-        _capital(pair).burn(msg.sender, amount);
-        _yield(pair).burn(msg.sender, amount);
+        _capitalLeg(pair).burn(msg.sender, amount);
+        _yieldLeg(pair).burn(msg.sender, amount);
         rawLocked -= amount;
 
         underlying.safeTransfer(msg.sender, amount);
@@ -129,7 +127,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
 
         uint256 coupon = _couponOf(startNonce, targetNonce);
         uint256 rawOut = Math.mulDiv(amount, coupon, UIScalingMath.MULTIPLIER_DECIMALS);
-        _yield(pair).burn(msg.sender, amount);
+        _yieldLeg(pair).burn(msg.sender, amount);
         rawLocked -= rawOut;
 
         underlying.safeTransfer(msg.sender, rawOut);
@@ -146,7 +144,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
 
         uint256 share = UIScalingMath.MULTIPLIER_DECIMALS - _couponOf(startNonce, targetNonce);
         uint256 rawOut = Math.mulDiv(amount, share, UIScalingMath.MULTIPLIER_DECIMALS);
-        _capital(pair).burn(msg.sender, amount);
+        _capitalLeg(pair).burn(msg.sender, amount);
         rawLocked -= rawOut;
 
         underlying.safeTransfer(msg.sender, rawOut);
@@ -315,13 +313,13 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
         if (address(pair.capital) == address(0)) revert PairNotFound();
     }
 
-    /// @dev Concrete capital token of a stored pair (for mint/burn).
-    function _capital(IERC8056PairWrapper.Pair storage pair) internal view returns (CapitalToken) {
-        return CapitalToken(address(pair.capital));
+    /// @dev Concrete capital leg of a stored pair (for mint/burn).
+    function _capitalLeg(IERC8056PairWrapper.Pair storage pair) internal view returns (LegToken) {
+        return LegToken(address(pair.capital));
     }
 
-    /// @dev Concrete yield token of a stored pair (for mint/burn).
-    function _yield(IERC8056PairWrapper.Pair storage pair) internal view returns (YieldToken) {
-        return YieldToken(address(pair.yield));
+    /// @dev Concrete yield leg of a stored pair (for mint/burn).
+    function _yieldLeg(IERC8056PairWrapper.Pair storage pair) internal view returns (LegToken) {
+        return LegToken(address(pair.yield));
     }
 }

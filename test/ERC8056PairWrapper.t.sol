@@ -2,18 +2,17 @@
 pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
-import {ERC8056PairWrapper} from "../src/ERC8056PairWrapper.sol";
-import {IERC8056PairWrapper} from "../src/interfaces/IERC8056PairWrapper.sol";
-import {CapitalToken} from "../src/tokens/CapitalToken.sol";
-import {YieldToken} from "../src/tokens/YieldToken.sol";
-import {ERC8056TokenClasses} from "../src/ERC8056TokenClasses.sol";
-import {UIScalingClass} from "../src/interfaces/UIScalingClass.sol";
+import {ERC8056PairWrapper} from "../src/wrapper/ERC8056PairWrapper.sol";
+import {IERC8056PairWrapper} from "../src/wrapper/interfaces/IERC8056PairWrapper.sol";
+import {LegToken} from "../src/wrapper/LegToken.sol";
+import {ERC8056Composite} from "../src/extensions/ERC8056Composite.sol";
+import {UIScalingClass} from "../src/extensions/interfaces/UIScalingClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 
 contract ERC8056PairWrapperTest is ScalingTestBase {
-    ERC8056TokenClasses internal underlying;
+    ERC8056Composite internal underlying;
     ERC8056PairWrapper internal wrapper;
 
     address internal owner = makeAddr("owner");
@@ -22,7 +21,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
     address internal carol = makeAddr("carol");
 
     function setUp() public {
-        underlying = new ERC8056TokenClasses("Stock", "STK", owner);
+        underlying = new ERC8056Composite("Stock", "STK", owner);
 
         wrapper = new ERC8056PairWrapper(IERC20(address(underlying)), underlying, "Tesla", "Tesla");
 
@@ -46,19 +45,19 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
     //==============================================================================//
     function _applyYieldDelta(uint256 delta, uint256 delay) internal {
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Yield, delta, block.timestamp + delay);
+        underlying.applyUIScalingDelta(UIScalingClass.Yield, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
     function _applySupplyDelta(uint256 delta, uint256 delay) internal {
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Supply, delta, block.timestamp + delay);
+        underlying.applyUIScalingDelta(UIScalingClass.Supply, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
     function _setYieldFactor(uint256 factor, uint256 delay) internal {
         vm.prank(owner);
-        underlying.setUIScalingFactor(UIScalingClass.Yield, factor, block.timestamp + delay);
+        underlying.setUIScalingFactor(UIScalingClass.Yield, factor, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
@@ -80,12 +79,12 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         (start, target) = wrapper.wrap(amount, lockNonces);
     }
 
-    function _capital(uint256 start, uint256 target) internal view returns (CapitalToken) {
-        return CapitalToken(address(wrapper.pairs(start, target).capital));
+    function _capital(uint256 start, uint256 target) internal view returns (LegToken) {
+        return LegToken(address(wrapper.pairs(start, target).capital));
     }
 
-    function _yield(uint256 start, uint256 target) internal view returns (YieldToken) {
-        return YieldToken(address(wrapper.pairs(start, target).yield));
+    function _yield(uint256 start, uint256 target) internal view returns (LegToken) {
+        return LegToken(address(wrapper.pairs(start, target).yield));
     }
 
     function _assertPairExact(address user, uint256 start, uint256 target, uint256 expected) internal view {
@@ -420,7 +419,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
         // schedule but do NOT warp past it
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 10 days);
+        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 10 days, "", "", "");
         assertEq(wrapper.currentNonce(), 1, "pending does not tick the nonce");
         vm.expectRevert(IERC8056PairWrapper.Locked.selector);
         vm.prank(alice);
@@ -434,7 +433,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         _advanceNonce(1 days); // nonce 1, Y = 1x
         _wrapLocked(alice, RAW_STAKE, 2); // pair (1,3)
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 5 days);
+        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 5 days, "", "", "");
         vm.warp(block.timestamp + 5 days); // lands before target: nonce 2, Y = 2x
         _advanceNonce(1 days); // nonce 3, Y = 2x
         assertEq(wrapper.couponOf(1, 3), 5e17);
@@ -454,7 +453,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1)
         // schedule a pending dividend: target nonce recorded but not yet effective
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 10 days);
+        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 10 days, "", "", "");
         vm.expectRevert(bytes4(keccak256("EventNotEffective()")));
         wrapper.previewUnwrapYield(RAW_STAKE, start, target);
         vm.expectRevert(bytes4(keccak256("EventNotEffective()")));
@@ -639,9 +638,9 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1)
 
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 days);
+        underlying.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
         vm.prank(owner);
-        underlying.setUIScalingFactor(UIScalingClass.Yield, 3e18, block.timestamp + 1 days);
+        underlying.setUIScalingFactor(UIScalingClass.Yield, 3e18, block.timestamp + 1 days, "", "", "");
 
         uint256 before = underlying.balanceOf(alice);
         vm.prank(alice);
