@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -39,13 +40,16 @@ import {LegToken} from "./LegToken.sol";
  *  integration surface protocols code against.
  *
  *  @dev Assumes the underlying is a standard ERC-20 with no fee-on-transfer
- *       and no rebasing. Fee-on-transfer tokens will cause accounting mismatches.
+ *       and no rebasing. Fee-on-transfer tokens are REJECTED at wrap time via
+ *       {IERC8056PairWrapper.FeeOnTransferNotSupported} (balance-delta check).
  */
 contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable override underlying;
     IERC8056Composite public immutable override scaledUnderlying;
+    // Solidity forbids `immutable` for non-value types; these are assigned exactly
+    // once in the constructor and have no setter, so they are de-facto immutable.
     string public override assetName;
     string public override assetSymbol;
 
@@ -82,20 +86,36 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
     {
         if (rawAmount == 0) revert InvalidAmount();
 
+        // startNonce = 0 is safe: the composite lazily bootstraps a genesis
+        // checkpoint at index 0, so classEventAtNonce(Yield, startNonce) always
+        // resolves even for the very first window (no ZeroFactor brick).
         startNonce = scaledUnderlying.getClassNonce(MultiplierClass.Yield);
         targetNonce = startNonce + lockNonces;
 
         IERC8056PairWrapper.Pair storage pair = _pairs[startNonce][targetNonce];
         if (address(pair.capital) == address(0)) {
+            // Legs inherit the underlying's decimals so 1:1 raw minting stays
+            // same-decimal by construction; default 18 when metadata is absent.
+            uint8 legDecimals = 18;
+            try IERC20Metadata(address(underlying)).decimals() returns (uint8 d) {
+                legDecimals = d;
+            } catch {}
             string memory suffix = string.concat(Strings.toString(startNonce), "-", Strings.toString(targetNonce));
-            pair.capital = new LegToken(string.concat("Capital-", suffix), string.concat("Cap", suffix), address(this));
-            pair.yield = new LegToken(string.concat("Yield-", suffix), string.concat("Yld", suffix), address(this));
+            pair.capital =
+                new LegToken(string.concat("Capital-", suffix), string.concat("Cap", suffix), address(this), legDecimals);
+            pair.yield =
+                new LegToken(string.concat("Yield-", suffix), string.concat("Yld", suffix), address(this), legDecimals);
             _pairStarts.push(startNonce);
             _pairTargets.push(targetNonce);
         }
 
         rawLocked += rawAmount;
+        uint256 balBefore = underlying.balanceOf(address(this));
         underlying.safeTransferFrom(msg.sender, address(this), rawAmount);
+        if (underlying.balanceOf(address(this)) - balBefore != rawAmount) {
+            rawLocked -= rawAmount; // restore before revert
+            revert FeeOnTransferNotSupported();
+        }
 
         _capitalLeg(pair).mint(msg.sender, rawAmount);
         _yieldLeg(pair).mint(msg.sender, rawAmount);
@@ -198,6 +218,8 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
     }
 
     /// @dev Total capital supply across all windows.
+    /// @dev OFF-CHAIN ONLY — loops over every created window; will exceed block gas
+    ///      limits as window count grows. Never call from on-chain protocols.
     function capitalSupply() public view override returns (uint256) {
         uint256 total;
         for (uint256 i = 0; i < _pairStarts.length; i++) {
@@ -207,6 +229,8 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
     }
 
     /// @dev Total yield supply across all windows.
+    /// @dev OFF-CHAIN ONLY — loops over every created window; will exceed block gas
+    ///      limits as window count grows. Never call from on-chain protocols.
     function yieldSupply() public view override returns (uint256) {
         uint256 total;
         for (uint256 i = 0; i < _pairStarts.length; i++) {
@@ -225,12 +249,23 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
         return address(pair.yield) == address(0) ? 0 : pair.yield.totalSupply();
     }
 
-    /// @dev Outstanding capital supply of window (start, target). This equals the window's
-    ///      raw backing (staked amount) at creation time. After a solo `unwrapYield` the
-    ///      capital token supply is unchanged but `rawLocked` has decreased, so this value
-    ///      no longer reflects the remaining raw backing. Use `rawLocked` for total vault solvency.
+    /// @dev Outstanding capital supply of window (start, target).
+    /// @dev DEPRECATED: misleading after solo redemptions — after an `unwrapYield` the
+    ///      capital supply is unchanged while raw backing has decreased. Use {windowBackingOf}.
     function rawLockedOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
         return capitalSupplyOf(startNonce, targetNonce);
+    }
+
+    /// @dev Remaining raw backing of window (start, target):
+    ///      capitalSupply * capitalShare + yieldSupply * coupon (frozen pricing);
+    ///      0 for a nonexistent pair.
+    function windowBackingOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
+        IERC8056PairWrapper.Pair storage pair = _pairs[startNonce][targetNonce];
+        if (address(pair.capital) == address(0)) return 0;
+        uint256 coupon = _couponOf(startNonce, targetNonce);
+        uint256 share = UIScalingMath.MULTIPLIER_DECIMALS - coupon;
+        return Math.mulDiv(pair.capital.totalSupply(), share, 1e18)
+            + Math.mulDiv(pair.yield.totalSupply(), coupon, 1e18);
     }
 
     /// @dev Frozen yield coupon of window (start, target): max(1 - Y_s/Y_t, 0), 1e18 fixed point.

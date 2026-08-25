@@ -41,6 +41,9 @@ interface IERC8056PairWrapper {
     error InvalidAmount();
     error Locked();
     error PairNotFound();
+    /// @dev The underlying token changed balances by a different amount than the
+    ///      requested one (fee-on-transfer or similar); the wrapper does not support it.
+    error FeeOnTransferNotSupported();
 
     // ------------------------------------------------------------------ immutables
     /// @dev Raw RWA token this wrapper locks.
@@ -83,13 +86,24 @@ interface IERC8056PairWrapper {
     function yieldSupplyOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
 
     /// @dev Aggregate capital / yield supply across all windows.
+    /// @dev OFF-CHAIN ONLY — loops over every created window; will exceed block gas
+    ///      limits as window count grows. Never call from on-chain protocols.
     function capitalSupply() external view returns (uint256);
+
+    /// @dev Aggregate capital / yield supply across all windows.
+    /// @dev OFF-CHAIN ONLY — loops over every created window; will exceed block gas
+    ///      limits as window count grows. Never call from on-chain protocols.
     function yieldSupply() external view returns (uint256);
 
-    /// @dev Outstanding capital supply of window (start, target). This equals the window's
-    ///      raw backing (staked amount) before any solo `unwrapYield`; after a yield-leg
-    ///      redemption it no longer reflects remaining raw backing.
+    /// @dev Outstanding capital supply of window (start, target).
+    /// @dev DEPRECATED: misleading after solo redemptions — after an `unwrapYield` the
+    ///      capital supply is unchanged while raw backing has decreased. Use {windowBackingOf}.
     function rawLockedOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
+
+    /// @dev Remaining raw backing of window (start, target):
+    ///      capitalSupply * capitalShare + yieldSupply * coupon (frozen pricing);
+    ///      0 for a nonexistent pair. This is the truthful per-window solvency figure.
+    function windowBackingOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
 
     // ------------------------------------------------------------------ pricing (frozen)
     /// @dev Frozen yield coupon of window (start, target): max(1 - Y_s/Y_t, 0), 1e18 fixed point.

@@ -9,7 +9,70 @@ import {ERC8056Composite} from "../src/ERC8056Composite.sol";
 import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+
+/// @dev Mock ERC-20 that takes a 10% fee on every transfer (mint exempt).
+contract FeeOnTransferMock is ERC20 {
+    constructor() ERC20("FeeToken", "FEE") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (from == address(0) || to == address(0)) {
+            super._update(from, to, value);
+            return;
+        }
+        uint256 fee = value / 10;
+        super._update(from, to, value - fee);
+        super._update(from, address(0), fee); // burn the fee
+    }
+}
+
+/// @dev Mock ERC-20 with 6 decimals.
+contract SixDecimalsMock is ERC20 {
+    constructor() ERC20("Six", "SIX") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+}
+
+/// @dev Minimal bare-bones ERC-20 WITHOUT metadata (no name/symbol/decimals).
+contract BareERC20Mock {
+    string public constant NAME = "Bare";
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        allowance[from][msg.sender] -= amount;
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+}
 
 contract ERC8056PairWrapperTest is ScalingTestBase {
     ERC8056Composite internal underlying;
@@ -669,5 +732,123 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         vm.prank(alice);
         wrapper.unwrapCapital(RAW_STAKE / 2, 0, 1);
         assertEq(underlying.balanceOf(alice) - capBefore, RAW_STAKE / 4);
+    }
+
+    //==============================================================================//
+    // Fee-on-transfer rejection (MED-1)                                            //
+    //==============================================================================//
+    function test_wrap_feeOnTransfer_revertsAndRestoresState() public {
+        FeeOnTransferMock fot = new FeeOnTransferMock();
+        ERC8056PairWrapper fotWrapper = new ERC8056PairWrapper(IERC20(address(fot)), underlying, "Tesla", "Tesla");
+
+        fot.mint(alice, RAW_STAKE);
+        vm.prank(alice);
+        fot.approve(address(fotWrapper), type(uint256).max);
+
+        vm.prank(alice);
+        vm.expectRevert(IERC8056PairWrapper.FeeOnTransferNotSupported.selector);
+        fotWrapper.wrap(RAW_STAKE, 1);
+
+        // vault balance unchanged (the ~10% that arrived was NOT accepted)
+        assertEq(fot.balanceOf(address(fotWrapper)), 0, "vault must not retain FoT dust");
+        assertEq(fotWrapper.rawLocked(), 0, "rawLocked restored");
+        // no legs minted
+        assertEq(fotWrapper.capitalSupplyOf(0, 1), 0);
+        assertEq(fotWrapper.yieldSupplyOf(0, 1), 0);
+    }
+
+    function test_wrap_feeOnTransfer_partialFee_reverts() public {
+        FeeOnTransferMock fot = new FeeOnTransferMock();
+        ERC8056PairWrapper fotWrapper = new ERC8056PairWrapper(IERC20(address(fot)), underlying, "Tesla", "Tesla");
+
+        uint256 amt = 1003; // odd amount: fee = 100, received = 903
+        fot.mint(alice, amt);
+        vm.prank(alice);
+        fot.approve(address(fotWrapper), type(uint256).max);
+
+        vm.prank(alice);
+        vm.expectRevert(IERC8056PairWrapper.FeeOnTransferNotSupported.selector);
+        fotWrapper.wrap(amt, 2);
+
+        assertEq(fot.balanceOf(address(fotWrapper)), 0);
+        assertEq(fotWrapper.rawLocked(), 0);
+    }
+
+    //==============================================================================//
+    // Truthful backing view (MED-2-docs)                                           //
+    //==============================================================================//
+    function test_windowBackingOf_zeroForNonexistentPair() public view {
+        assertEq(wrapper.windowBackingOf(9, 9), 0, "nonexistent pair -> 0");
+    }
+
+    function test_windowBackingOf_matchesFrozenSplit() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x -> coupon = 0.5
+
+        // backing = 100 * (1 - 0.5) + 100 * 0.5 = 100
+        assertEq(wrapper.windowBackingOf(1, 2), RAW_STAKE);
+    }
+
+    function test_windowBackingOf_afterSoloYieldRedemption_isTruthful() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x -> coupon = 0.5
+
+        vm.prank(alice);
+        wrapper.unwrapYield(60 ether, 1, 2); // pays 30 raw; yield supply -> 40
+
+        // rawLocked is truthful here (70) but rawLockedOf still reports capital supply
+        assertEq(wrapper.rawLocked(), 70 ether);
+        assertEq(wrapper.rawLockedOf(1, 2), RAW_STAKE, "deprecated view is misleading by design");
+        // windowBackingOf: capital 100 * share 0.5 + yield 40 * coupon 0.5 = 70
+        assertEq(wrapper.windowBackingOf(1, 2), 70 ether, "backing reflects solo redemption");
+    }
+
+    function test_windowBackingOf_zeroCoupon_fullCapitalBacking() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
+        _setYieldFactor(HALF, 1 days); // nonce 2, Y falls -> coupon 0
+
+        assertEq(wrapper.windowBackingOf(1, 2), RAW_STAKE, "principal protected -> full backing");
+    }
+
+    //==============================================================================//
+    // Decimals passthrough (LOW-2/INFO-3)                                          //
+    //==============================================================================//
+    function _capitalOf(ERC8056PairWrapper w, uint256 start, uint256 target) internal view returns (LegToken) {
+        return LegToken(address(w.pairs(start, target).capital));
+    }
+
+    function _yieldOf(ERC8056PairWrapper w, uint256 start, uint256 target) internal view returns (LegToken) {
+        return LegToken(address(w.pairs(start, target).yield));
+    }
+
+    function test_legDecimals_matchUnderlyingDecimals() public {
+        SixDecimalsMock six = new SixDecimalsMock();
+        ERC8056PairWrapper sixWrapper = new ERC8056PairWrapper(IERC20(address(six)), underlying, "Tesla", "Tesla");
+
+        six.mint(alice, 1000e6);
+        vm.prank(alice);
+        six.approve(address(sixWrapper), type(uint256).max);
+        vm.prank(alice);
+        (uint256 start, uint256 target) = sixWrapper.wrap(100e6, 1);
+
+        assertEq(_capitalOf(sixWrapper, start, target).decimals(), 6, "capital leg inherits underlying decimals");
+        assertEq(_yieldOf(sixWrapper, start, target).decimals(), 6, "yield leg inherits underlying decimals");
+    }
+
+    function test_legDecimals_fallback18_whenNoMetadata() public {
+        BareERC20Mock bare = new BareERC20Mock();
+        ERC8056PairWrapper bareWrapper = new ERC8056PairWrapper(IERC20(address(bare)), underlying, "Tesla", "Tesla");
+
+        bare.mint(alice, 1000 ether);
+        vm.prank(alice);
+        bare.approve(address(bareWrapper), type(uint256).max);
+        vm.prank(alice);
+        (uint256 start, uint256 target) = bareWrapper.wrap(100 ether, 1);
+
+        assertEq(_capitalOf(bareWrapper, start, target).decimals(), 18, "fallback to 18 when decimals() unavailable");
+        assertEq(_yieldOf(bareWrapper, start, target).decimals(), 18);
     }
 }
