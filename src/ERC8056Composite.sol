@@ -150,11 +150,18 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         MultiplierClass scalingClass,
         uint256 newMultiplier,
         uint256 effectiveAtTimestamp,
-        string calldata id,
-        string calldata description,
-        string calldata uri
+        string memory id,
+        string memory description,
+        string memory uri
     ) public override(IERC8056Composite) onlyOwner {
         _setMultiplier(scalingClass, newMultiplier, effectiveAtTimestamp, id, description, uri);
+    }
+
+    /// @notice Legacy 2-arg setter from ERC-8056: targets the Supply class.
+    /// @dev Delegates to the Supply class instead of writing the base contract's
+    ///      dead single-multiplier storage (which vanilla reads would never see).
+    function setUIMultiplier(uint256 newMultiplier, uint256 effectiveAtTimestamp) public override(ERC8056) onlyOwner {
+        _setMultiplier(MultiplierClass.Supply, newMultiplier, effectiveAtTimestamp, "", "", "");
     }
 
     function cancelPendingUIMultiplier() public override(IERC8056Cancel, ERC8056) onlyOwner {
@@ -168,7 +175,8 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         ClassScalingState storage state = _classScaling[scalingClass];
         uint256 pendingFactor = state.pendingFactor;
 
-        state.pendingFactor = _activeFactor(scalingClass);
+        uint256 activeFactor = _activeFactor(scalingClass);
+        state.pendingFactor = activeFactor;
         state.effectiveAt = type(uint256).max;
 
         if (_checkpoints[scalingClass].length > 0) {
@@ -176,17 +184,17 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
             _checkpointTimestamps[scalingClass].pop();
         }
 
-        emit UIScalingFactorCancelled(scalingClass, pendingFactor, state.activeFactor, block.timestamp);
-        emit UIMultiplierCancelled(pendingFactor, state.activeFactor, block.timestamp);
+        emit UIScalingFactorCancelled(scalingClass, pendingFactor, activeFactor, block.timestamp);
+        emit UIMultiplierCancelled(pendingFactor, activeFactor, block.timestamp);
     }
 
     function _setMultiplier(
         MultiplierClass scalingClass,
         uint256 newMultiplier,
         uint256 effectiveAtTimestamp,
-        string calldata id,
-        string calldata description,
-        string calldata uri
+        string memory id,
+        string memory description,
+        string memory uri
     ) internal {
         _validateScalingClass(scalingClass);
         require(newMultiplier > 0, "ERC8056: factor must be positive");
@@ -255,24 +263,35 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         return classEventAtNonce(scalingClass, nonce).cumulativeMultiplier;
     }
 
+    /// @dev Deviation from vanilla ERC-8056: returns the product over classes of
+    ///      the pending factor for classes with a live announcement and the active
+    ///      factor otherwise — i.e. it describes the composite multiplier that
+    ///      would result once every pending update lands, counting only live
+    ///      announcements.
     function newUIMultiplier() public view override(ERC8056) returns (uint256) {
         return _compositeFromPending();
     }
 
+    /// @dev Deviation from vanilla ERC-8056: returns the earliest pending
+    ///      `effectiveAt` across classes; if no class has a live announcement,
+    ///      returns the most recent effective event across classes (0 only when
+    ///      nothing was ever scheduled) instead of resetting to 0.
     function effectiveAt() public view override(ERC8056) returns (uint256) {
         uint256 earliest = type(uint256).max;
-        bool found;
+        uint256 latestEvent;
         for (uint256 i = 0; i < UIScalingMath.SCALING_CLASS_COUNT; i++) {
             MultiplierClass scalingClass = MultiplierClass(i);
             if (hasPendingUIMultiplier(scalingClass)) {
                 uint256 ts = _classScaling[scalingClass].effectiveAt;
-                if (ts < earliest) {
-                    earliest = ts;
-                    found = true;
-                }
+                if (ts < earliest) earliest = ts;
+            }
+            ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
+            if (history.length > 0) {
+                uint256 lastTs = history[history.length - 1].effectiveAt;
+                if (lastTs > latestEvent) latestEvent = lastTs;
             }
         }
-        return found ? earliest : 0;
+        return earliest != type(uint256).max ? earliest : latestEvent;
     }
 
     //==============================================================================//
@@ -319,21 +338,27 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         emit TransferWithUIAmount(from, to, amount, toUIAmount(amount));
     }
 
+    /// @dev Composite of the factor each class contributes to the next state:
+    ///      pending where a live announcement exists, active otherwise.
     function _compositeFromPending() internal view returns (uint256) {
         return UIScalingMath.composeUiMultiplier(
-            _factorForComposite(MultiplierClass.Supply),
-            _factorForComposite(MultiplierClass.Yield),
-            _factorForComposite(MultiplierClass.Other)
+            _liveOrActiveFactor(MultiplierClass.Supply),
+            _liveOrActiveFactor(MultiplierClass.Yield),
+            _liveOrActiveFactor(MultiplierClass.Other)
         );
     }
 
-    function _factorForComposite(MultiplierClass scalingClass) internal view returns (uint256) {
-        return _pendingFactor(scalingClass);
+    function _liveOrActiveFactor(MultiplierClass scalingClass) internal view returns (uint256) {
+        return hasPendingUIMultiplier(scalingClass) ? _pendingFactor(scalingClass) : _activeFactor(scalingClass);
     }
 
-    function _activeFactor(MultiplierClass c) internal view returns (uint256 f) {
-        f = _classScaling[c].activeFactor;
-        if (f == 0) f = UIScalingMath.MULTIPLIER_DECIMALS;
+    /// @dev Currently effective factor for a class, derived from its checkpoint
+    ///      history so it stays correct even when the cached `activeFactor`
+    ///      storage is stale (e.g. right after an announcement activates without
+    ///      a subsequent schedule on that class, or on lazily-bootstrapped
+    ///      upgraded proxies).
+    function _activeFactor(MultiplierClass c) internal view returns (uint256) {
+        return uiScalingFactorAt(c, block.timestamp);
     }
 
     function _pendingFactor(MultiplierClass c) internal view returns (uint256 f) {

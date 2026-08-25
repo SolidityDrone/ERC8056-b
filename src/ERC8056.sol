@@ -66,7 +66,7 @@ contract ERC8056 is
         return _effectiveAt;
     }
 
-    function setUIMultiplier(uint256 newMultiplier, uint256 effectiveAtTimestamp) external onlyOwner {
+    function setUIMultiplier(uint256 newMultiplier, uint256 effectiveAtTimestamp) external virtual onlyOwner {
         if (newMultiplier == 0) revert ZeroMultiplier();
         if (effectiveAtTimestamp <= block.timestamp) revert EffectiveAtNotInFuture();
 

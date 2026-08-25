@@ -729,6 +729,64 @@ contract ERC8056CompositeTest is ScalingTestBase {
     }
 
     //==============================================================================//
+    // Legacy setter delegation + composite view parity (H3/M4)                     //
+    //==============================================================================//
+
+    /// @dev Documented deviation: the legacy 2-arg `setUIMultiplier(uint256,uint256)`
+    ///      targets the Supply class instead of silently writing dead base storage.
+    function test_LegacySetter_RoutesToSupplyClass() public {
+        uint256 t = block.timestamp + 10;
+        vm.prank(owner);
+        token.setUIMultiplier(15e17, t); // legacy 2-arg signature
+        assertTrue(token.hasPendingUIMultiplier(MultiplierClass.Supply));
+        assertEq(token.newUIMultiplier(MultiplierClass.Supply), 15e17);
+
+        vm.warp(t);
+        assertEq(token.uiScalingFactor(MultiplierClass.Supply), 15e17);
+        // composite reflects it: Supply 15e17 * Yield 1e18 * Other 1e18 / 1e36
+        assertEq(token.uiMultiplier(), 15e17);
+        assertEq(token.balanceOfUI(holder), 150 ether);
+    }
+
+    /// @dev Documented deviation: composite `newUIMultiplier()` only counts classes
+    ///      with a live pending announcement; already-activated classes contribute
+    ///      their current active factor (vanilla intuition of "the upcoming update").
+    function test_NewUIMultiplier_Composite_IgnoresStalePendings() public {
+        uint256 tYield = block.timestamp + 100;
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, 2e18, tYield, "", "", "");
+
+        vm.warp(tYield + 1); // Yield announcement activated: no longer pending
+        assertFalse(token.hasPendingUIMultiplier(MultiplierClass.Yield));
+
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Supply, 1.5e18, block.timestamp + 200, "", "", "");
+        assertFalse(token.hasPendingUIMultiplier(MultiplierClass.Yield));
+
+        // 1.5e18 * activeYield(2e18) * 1e18 / 1e36 = 3e18; no stale Yield pending counted
+        assertEq(token.newUIMultiplier(), 3e18);
+        // current multiplier still excludes the pending Supply factor
+        assertEq(token.uiMultiplier(), 2e18);
+    }
+
+    /// @dev Documented deviation: with no live pendings, `effectiveAt()` reports the
+    ///      most recent effective event across classes instead of dropping to 0.
+    ///      Genesis-only history still yields 0.
+    function test_EffectiveAt_Composite_NeverResetsBelowLastEvent() public {
+        assertEq(token.effectiveAt(), 0); // genesis-only history
+
+        uint256 tYield = _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 hours);
+        assertEq(token.effectiveAt(), tYield); // earliest (only) pending
+
+        vm.warp(tYield); // event activates, nothing left pending
+        assertFalse(token.hasPendingUIMultiplier(MultiplierClass.Yield));
+        assertEq(token.effectiveAt(), tYield);
+
+        vm.warp(tYield + 30 days);
+        assertEq(token.effectiveAt(), tYield); // never resets to 0 after real events
+    }
+
+    //==============================================================================//
     // Lazy genesis: upgrade from vanilla ERC8056 proxy                             //
     //==============================================================================//
 
