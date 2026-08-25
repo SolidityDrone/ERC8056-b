@@ -17,7 +17,7 @@ This proposal extends [ERC-8056](./eip-8056.md) (Scaled UI Amount Extension) by 
 
 The critical consequence: every on-chain event carries **the reason it happened** -- whether a multiplier move was a denomination change or a genuine yield accretion. This enables a **Capital/Yield split** for tokenized real-world assets (RWAs): the class decomposition and checkpoint history serve as the raw material for a deterministic, event-accurate separation of a token into principal and yield components.
 
-This EIP specifies the extension interface (`IERC8056Composite`), the scaling-class enum (`UIScalingClass`), and the normative requirements for per-class factor storage, checkpoint recording, and yield-event derivation. A reference implementation is provided.
+This EIP specifies the extension interface (`IERC8056Composite`), the scaling-class enum (`MultiplierClass`), and the normative requirements for per-class factor storage, checkpoint recording, and yield-event derivation. A reference implementation is provided.
 
 A standalone Capital/Yield wrapper contract (`ERC8056PairWrapper`) and a canonical per-asset registry (`ERC8056PairWrapperRegistry`) are included as **practical reference implementations** -- optional consumer surfaces that demonstrate how the extension enables on-chain principal/yield decomposition. They are not part of the normative standard.
 
@@ -74,7 +74,7 @@ The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" in this docu
 
 This EIP extends ERC-8056 with a **class-decomposed scaling layer**. It adds:
 
-1. A **scaling-class enum** `UIScalingClass` with three values: `Supply`, `Yield`, `Other`.
+1. A **scaling-class enum** `MultiplierClass` with three values: `Supply`, `Yield`, `Other`.
 2. Per-class **cumulative factors** replacing the single `uiMultiplier` with three independent factor series.
 3. Per-class **checkpoint histories** recording every effective update.
 4. A **yield-event log** derived from the `Yield` checkpoint history, expressed as a nonce sequence.
@@ -88,7 +88,7 @@ The composite `uiMultiplier()` is always the product of every class factor. Ther
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-enum UIScalingClass {
+enum MultiplierClass {
     Supply,  // 0 -- splits, reverse splits, ADR ratio changes, redenomination
     Yield,   // 1 -- dividend reinvestment, DRIP, distributions, pro-rata buyback
     Other    // 2 -- fees, taxes, governance re-denominations
@@ -124,7 +124,7 @@ interface IERC8056Composite {
     }
 
     event UIScalingFactorUpdated(
-        UIScalingClass indexed scalingClass,
+        MultiplierClass indexed scalingClass,
         uint256 newMultiplier,
         uint256 multiplierDelta,
         uint256 effectiveAtTimestamp,
@@ -134,31 +134,31 @@ interface IERC8056Composite {
 
     // ---- Per-class factor reads ----
 
-    function uiScalingFactor(UIScalingClass scalingClass) external view returns (uint256);
-    function uiScalingFactorAt(UIScalingClass scalingClass, uint256 timestamp) external view returns (uint256);
+    function uiScalingFactor(MultiplierClass scalingClass) external view returns (uint256);
+    function uiScalingFactorAt(MultiplierClass scalingClass, uint256 timestamp) external view returns (uint256);
     function uiMultiplierAt(uint256 timestamp) external view returns (uint256);
 
     // ---- Pending (scheduled) updates ----
 
-    function newUIMultiplier(UIScalingClass scalingClass) external view returns (uint256);
-    function effectiveAt(UIScalingClass scalingClass) external view returns (uint256);
-    function hasPendingUIMultiplier(UIScalingClass scalingClass) external view returns (bool);
+    function newUIMultiplier(MultiplierClass scalingClass) external view returns (uint256);
+    function effectiveAt(MultiplierClass scalingClass) external view returns (uint256);
+    function hasPendingUIMultiplier(MultiplierClass scalingClass) external view returns (bool);
 
     // ---- Checkpoint history ----
 
-    function scalingHistoryLength(UIScalingClass scalingClass) external view returns (uint256);
-    function scalingCheckpointAt(UIScalingClass scalingClass, uint256 index)
+    function scalingHistoryLength(MultiplierClass scalingClass) external view returns (uint256);
+    function scalingCheckpointAt(MultiplierClass scalingClass, uint256 index)
         external view returns (ScalingCheckpoint memory);
 
     // ---- Yield events (derived from Yield checkpoint history) ----
 
-    function getClassNonce(UIScalingClass.Yield) external view returns (uint256);
-    function classEventAtNonce(UIScalingClass.Yield, uint256 nonce) external view returns (ClassScalingEvent memory);
+    function getClassNonce(MultiplierClass.Yield) external view returns (uint256);
+    function classEventAtNonce(MultiplierClass.Yield, uint256 nonce) external view returns (ClassScalingEvent memory);
 
     // ---- State-changing: schedule updates ----
 
     function setUIMultiplier(
-        UIScalingClass scalingClass,
+        MultiplierClass scalingClass,
         uint256 newMultiplier,
         uint256 effectiveAtTimestamp,
         string calldata id,
@@ -167,7 +167,7 @@ interface IERC8056Composite {
     ) external;
 
     function applyUIMultiplierDelta(
-        UIScalingClass scalingClass,
+        MultiplierClass scalingClass,
         uint256 multiplierDelta,
         uint256 effectiveAtTimestamp,
         string calldata id,
@@ -182,7 +182,7 @@ interface IERC8056Composite {
 #### Composite multiplier
 
 1. The composite `uiMultiplier()` MUST equal the product of every class factor: `Supply * Yield * Other` (each 18-decimal fixed point).
-2. There MUST NOT exist a generic monolithic multiplier setter. Every state-changing function that modifies a class factor MUST accept a `UIScalingClass` parameter.
+2. There MUST NOT exist a generic monolithic multiplier setter. Every state-changing function that modifies a class factor MUST accept a `MultiplierClass` parameter.
 3. The composite MUST be derived at read time from the class factors -- it MUST NOT be stored as a separate state variable that could drift out of sync.
 
 #### Per-class factors
@@ -209,7 +209,7 @@ interface IERC8056Composite {
 #### Yield-event derivation
 
 16. The yield nonce MUST be derived from the `Yield` checkpoint history: it counts checkpoints with `effectiveAt <= block.timestamp`, excluding the genesis checkpoint (index 0) and any pending (future) updates.
-17. `classEventAtNonce(UIScalingClass.Yield, nonce)` MUST map nonce `n` to checkpoint index `n` (1-based events; genesis is index 0, not an event).
+17. `classEventAtNonce(MultiplierClass.Yield, nonce)` MUST map nonce `n` to checkpoint index `n` (1-based events; genesis is index 0, not an event).
 18. A scheduled-but-not-effective Yield update MUST NOT consume a nonce.
 19. The nonce MUST tick only when a Yield-class update actually becomes effective.
 
@@ -268,7 +268,7 @@ The full reference implementation is available at [github.com/SolidityDrone/ERC8
 - `ERC8056Composite.sol` -- the class-decomposed extension contract.
 - `UIScalingMath.sol` -- canonical composite math library.
 - `IERC8056Composite.sol` -- the extension interface.
-- `UIScalingClass.sol` -- the scaling-class enum.
+- `MultiplierClass.sol` -- the multiplier-class enum.
 - `ERC8056PairWrapper.sol` -- the Capital/Yield wrapper (reference consumer).
 - `ERC8056PairWrapperRegistry.sol` -- canonical per-asset wrapper discovery.
 - `IERC8056PairWrapper.sol` -- the wrapper integration interface.
@@ -283,23 +283,23 @@ contract ERC8056Composite is ERC20, ERC165, IERC8056Composite, Ownable {
         uint256 effectiveAt;
     }
 
-    mapping(UIScalingClass => ClassScalingState) private _classScaling;
-    mapping(UIScalingClass => ScalingCheckpoint[]) private _checkpoints;
-    mapping(UIScalingClass => uint256[]) private _checkpointTimestamps;
+    mapping(MultiplierClass => ClassScalingState) private _classScaling;
+    mapping(MultiplierClass => ScalingCheckpoint[]) private _checkpoints;
+    mapping(MultiplierClass => uint256[]) private _checkpointTimestamps;
 
     function uiMultiplier() public view returns (uint256) {
         return UIScalingMath.composeUiMultiplier(
-            uiScalingFactor(UIScalingClass.Supply),
-            uiScalingFactor(UIScalingClass.Yield),
-            uiScalingFactor(UIScalingClass.Other)
+            uiScalingFactor(MultiplierClass.Supply),
+            uiScalingFactor(MultiplierClass.Yield),
+            uiScalingFactor(MultiplierClass.Other)
         );
     }
 
-    function uiScalingFactor(UIScalingClass scalingClass) public view returns (uint256) {
+    function uiScalingFactor(MultiplierClass scalingClass) public view returns (uint256) {
         return uiScalingFactorAt(scalingClass, block.timestamp);
     }
 
-    function uiScalingFactorAt(UIScalingClass scalingClass, uint256 timestamp) public view returns (uint256) {
+    function uiScalingFactorAt(MultiplierClass scalingClass, uint256 timestamp) public view returns (uint256) {
         uint256[] storage timestamps = _checkpointTimestamps[scalingClass];
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
         uint256 idx = Arrays.lowerBound(timestamps, timestamp);
@@ -309,7 +309,7 @@ contract ERC8056Composite is ERC20, ERC165, IERC8056Composite, Ownable {
         return idx > 0 ? history[idx - 1].cumulativeFactor : UIScalingMath.MULTIPLIER_DECIMALS;
     }
 
-    function getClassNonce(UIScalingClass scalingClass) public view returns (uint256) {
+    function getClassNonce(MultiplierClass scalingClass) public view returns (uint256) {
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
         uint256 nonce;
         for (uint256 i = 1; i < history.length; i++) {
@@ -319,7 +319,7 @@ contract ERC8056Composite is ERC20, ERC165, IERC8056Composite, Ownable {
         return nonce;
     }
 
-    function classEventAtNonce(UIScalingClass scalingClass, uint256 nonce)
+    function classEventAtNonce(MultiplierClass scalingClass, uint256 nonce)
         public
         view
         returns (ClassScalingEvent memory)
@@ -341,8 +341,8 @@ The wrapper locks raw RWA and mints per-window `LegToken` pairs (capital and yie
 
 - `wrap(rawAmount, lockNonces)` -- locks underlying, mints 1:1 capital+yield for the window `(currentNonce, currentNonce + lockNonces)`.
 - `unwrap(amount, start, target)` -- burns both legs, returns exactly `amount` (anytime).
-- `unwrapYield(amount, start, target)` -- burns yield leg, returns `amount * coupon` (gated: `getClassNonce(UIScalingClass.Yield) >= target`).
-- `unwrapCapital(amount, start, target)` -- burns capital leg, returns `amount * (1 - coupon)` (gated: `getClassNonce(UIScalingClass.Yield) >= target`).
+- `unwrapYield(amount, start, target)` -- burns yield leg, returns `amount * coupon` (gated: `getClassNonce(MultiplierClass.Yield) >= target`).
+- `unwrapCapital(amount, start, target)` -- burns capital leg, returns `amount * (1 - coupon)` (gated: `getClassNonce(MultiplierClass.Yield) >= target`).
 
 Where `coupon = max(1 - Y_start / Y_target, 0)` in 1e18 fixed point, frozen at historical checkpoints only.
 
@@ -356,7 +356,7 @@ This EIP extends ERC-8056. It does not modify the existing `IERC8056`, `IScaledU
 
 The `IERC8056Composite` interface is additive. The composite `uiMultiplier()` function retains its signature and semantics -- it is simply derived from three class factors instead of a stored scalar. Off-chain consumers that read `uiMultiplier()` see no difference.
 
-The `UIScalingClass` enum and `IERC8056Composite` interface ID are new. Contracts that adopt this extension gain new ERC-165 interface IDs alongside the existing ERC-8056 IDs.
+The `MultiplierClass` enum and `IERC8056Composite` interface ID are new. Contracts that adopt this extension gain new ERC-165 interface IDs alongside the existing ERC-8056 IDs.
 
 The Capital/Yield wrapper and registry are optional consumer contracts. They do not alter the base token's behavior.
 

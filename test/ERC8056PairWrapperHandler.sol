@@ -6,7 +6,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC8056PairWrapper} from "../src/wrapper/ERC8056PairWrapper.sol";
 import {IERC8056PairWrapper} from "../src/wrapper/interfaces/IERC8056PairWrapper.sol";
 import {ERC8056Composite} from "../src/extensions/ERC8056Composite.sol";
-import {UIScalingClass} from "../src/extensions/interfaces/UIScalingClass.sol";
+import {MultiplierClass} from "../src/extensions/interfaces/MultiplierClass.sol";
 
 /// @dev Action handler for the wrapper invariant suite. Every entrypoint either
 ///      performs an operation or reverts; asserts inside handlers fail the suite.
@@ -119,7 +119,7 @@ contract ERC8056PairWrapperHandler is Test {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(UIScalingClass.Yield, delta, block.timestamp + delay, "", "", "");
+        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
@@ -127,7 +127,7 @@ contract ERC8056PairWrapperHandler is Test {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(UIScalingClass.Supply, delta, block.timestamp + delay, "", "", "");
+        underlying.applyUIMultiplierDelta(MultiplierClass.Supply, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
@@ -135,7 +135,7 @@ contract ERC8056PairWrapperHandler is Test {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(UIScalingClass.Other, delta, block.timestamp + delay, "", "", "");
+        underlying.applyUIMultiplierDelta(MultiplierClass.Other, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 }

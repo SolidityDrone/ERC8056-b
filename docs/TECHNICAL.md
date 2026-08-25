@@ -14,7 +14,7 @@ use cases the design enables.
 The extension (`IERC8056Composite`, implemented by `ERC8056Composite`)
 keeps every EIP-8056 function untouched and adds:
 
-- **A named scaling-class enum** `UIScalingClass { Supply, Yield, Other }`.
+- **A named scaling-class enum** `MultiplierClass { Supply, Yield, Other }`.
   Backward compatible: `Supply = 0`, `Yield = 1`, `Other = 2` appended.
 - **Per-class cumulative factors.** `uiScalingFactor(class)` and
   `uiScalingFactorAt(class, ts)` read a class factor; the composite
@@ -24,8 +24,8 @@ keeps every EIP-8056 function untouched and adds:
   applies a relative `new = current × delta / 1e18`. Nothing activates before
   `effectiveAt` — a pending update does not move today's multiplier.
 - **A checkpoint history per class.** `scalingCheckpointAt`, `scalingHistoryLength`. Each checkpoint is `{effectiveAt, cumulativeFactor}`. Once a checkpoint becomes effective it is permanent; a scheduled-but-not-yet-effective (pending) checkpoint is replaced if rescheduled, so only *landed* events are frozen.
-- **A yield-event log and nonce.** `getClassNonce(UIScalingClass.Yield)` counts effective Yield
-  updates; `classEventAtNonce(UIScalingClass.Yield, nonce)` returns `{timestamp, cumulativeFactor}`. This is the
+- **A yield-event log and nonce.** `getClassNonce(MultiplierClass.Yield)` counts effective Yield
+  updates; `classEventAtNonce(MultiplierClass.Yield, nonce)` returns `{timestamp, cumulativeFactor}`. This is the
   backbone of the Capital/Yield split.
 
 ### 1.2 What it solves
@@ -53,9 +53,9 @@ construction.
 
 ### 1.4 The nonce is derived, not stored
 
-`getClassNonce(UIScalingClass.Yield)` is *derived* from the Yield checkpoint history: it counts
+`getClassNonce(MultiplierClass.Yield)` is *derived* from the Yield checkpoint history: it counts
 checkpoints with `effectiveAt <= now`, skipping the genesis checkpoint (index 0)
-and any pending (future) updates. `classEventAtNonce(UIScalingClass.Yield, nonce)` maps nonce `n` to
+and any pending (future) updates. `classEventAtNonce(MultiplierClass.Yield, nonce)` maps nonce `n` to
 checkpoint index `n` (`1`-based events; genesis is not an event). This means:
 
 - No *additional* storage for the event log — the nonce and events are read
@@ -118,7 +118,7 @@ next N multiplier updates, whenever they land."*
 
 - `wrap(raw, lockNonces)` at current nonce `N` creates/joins pair
   `(start, target) = (N, N + lockNonces)`.
-- The position matures when `getClassNonce(UIScalingClass.Yield) >= targetNonce` — i.e. when the
+- The position matures when `getClassNonce(MultiplierClass.Yield) >= targetNonce` — i.e. when the
   target **event** actually happens, not when a clock crosses a date.
 
 ### 2.3 The core: event-based expiry
@@ -127,8 +127,8 @@ The yield claim is priced **frozen at the target nonce**, from historical
 checkpoints only:
 
 ```
-Y_s = classEventAtNonce(UIScalingClass.Yield, start).cumulativeFactor     # multiplier when the window opened
-Y_t = classEventAtNonce(UIScalingClass.Yield, target).cumulativeFactor    # multiplier when the window matured
+Y_s = classEventAtNonce(MultiplierClass.Yield, start).cumulativeFactor     # multiplier when the window opened
+Y_t = classEventAtNonce(MultiplierClass.Yield, target).cumulativeFactor    # multiplier when the window matured
 
 coupon = max(1 - Y_s / Y_t, 0)           # yield leg pays this fraction
 share  = 1 - coupon                      # capital leg pays the rest
@@ -148,13 +148,13 @@ Key properties:
   claim. This is exactly the "expiry fires before the multiplier updates"
   failure mode, resolved.
 - **Frozen and final.** Effective checkpoints are permanent, so
-  `classEventAtNonce(UIScalingClass.Yield, target)` stays readable forever and the payout is deterministic.
+  `classEventAtNonce(MultiplierClass.Yield, target)` stays readable forever and the payout is deterministic.
 
 ### 2.4 The CA-push / nonce system
 
 Because yield arrives as discrete events, the contract must learn *when* an
 event lands. That is the **central authority (CA) push** — the issuer (or a
-designated keeper) calls `applyUIMultiplierDelta(UIScalingClass.Yield, delta, ts)`
+designated keeper) calls `applyUIMultiplierDelta(MultiplierClass.Yield, delta, ts)`
 when a dividend is distributed. The nonce ticks when that pushed update becomes
 **effective** (its `effectiveAt` is reached), not at the moment of the call.
 This is the trusted source of truth for "a yield event happened," just as the
@@ -181,8 +181,8 @@ The estimate is as good as the issuer's dividend cadence — and it can never
 | Path | When | Payout |
 |------|------|--------|
 | `unwrap` (both legs) | anytime | exactly `amount` |
-| `unwrapYield` | `getClassNonce(UIScalingClass.Yield) >= target` | `amount × coupon` |
-| `unwrapCapital` | `getClassNonce(UIScalingClass.Yield) >= target` | `amount × (1 - coupon)` |
+| `unwrapYield` | `getClassNonce(MultiplierClass.Yield) >= target` | `amount × coupon` |
+| `unwrapCapital` | `getClassNonce(MultiplierClass.Yield) >= target` | `amount × (1 - coupon)` |
 
 Because `coupon + share = 1`, every pair's total claim equals its deposit, so a
 **single shared raw vault stays solvent by construction**: total claims never

@@ -6,7 +6,7 @@ import {ERC8056PairWrapper} from "../src/wrapper/ERC8056PairWrapper.sol";
 import {IERC8056PairWrapper} from "../src/wrapper/interfaces/IERC8056PairWrapper.sol";
 import {LegToken} from "../src/wrapper/LegToken.sol";
 import {ERC8056Composite} from "../src/extensions/ERC8056Composite.sol";
-import {UIScalingClass} from "../src/extensions/interfaces/UIScalingClass.sol";
+import {MultiplierClass} from "../src/extensions/interfaces/MultiplierClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
@@ -45,19 +45,19 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
     //==============================================================================//
     function _applyYieldDelta(uint256 delta, uint256 delay) internal {
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(UIScalingClass.Yield, delta, block.timestamp + delay, "", "", "");
+        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
     function _applySupplyDelta(uint256 delta, uint256 delay) internal {
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(UIScalingClass.Supply, delta, block.timestamp + delay, "", "", "");
+        underlying.applyUIMultiplierDelta(MultiplierClass.Supply, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
     function _setYieldFactor(uint256 factor, uint256 delay) internal {
         vm.prank(owner);
-        underlying.setUIMultiplier(UIScalingClass.Yield, factor, block.timestamp + delay, "", "", "");
+        underlying.setUIMultiplier(MultiplierClass.Yield, factor, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
@@ -419,7 +419,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
         // schedule but do NOT warp past it
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 10 days, "", "", "");
+        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, block.timestamp + 10 days, "", "", "");
         assertEq(wrapper.currentNonce(), 1, "pending does not tick the nonce");
         vm.expectRevert(IERC8056PairWrapper.Locked.selector);
         vm.prank(alice);
@@ -433,7 +433,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         _advanceNonce(1 days); // nonce 1, Y = 1x
         _wrapLocked(alice, RAW_STAKE, 2); // pair (1,3)
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 5 days, "", "", "");
+        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, block.timestamp + 5 days, "", "", "");
         vm.warp(block.timestamp + 5 days); // lands before target: nonce 2, Y = 2x
         _advanceNonce(1 days); // nonce 3, Y = 2x
         assertEq(wrapper.couponOf(1, 3), 5e17);
@@ -453,7 +453,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1)
         // schedule a pending dividend: target nonce recorded but not yet effective
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 10 days, "", "", "");
+        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, block.timestamp + 10 days, "", "", "");
         vm.expectRevert(bytes4(keccak256("EventNotEffective()")));
         wrapper.previewUnwrapYield(RAW_STAKE, start, target);
         vm.expectRevert(bytes4(keccak256("EventNotEffective()")));
@@ -638,9 +638,9 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1)
 
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
+        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
         vm.prank(owner);
-        underlying.setUIMultiplier(UIScalingClass.Yield, 3e18, block.timestamp + 1 days, "", "", "");
+        underlying.setUIMultiplier(MultiplierClass.Yield, 3e18, block.timestamp + 1 days, "", "", "");
 
         uint256 before = underlying.balanceOf(alice);
         vm.prank(alice);

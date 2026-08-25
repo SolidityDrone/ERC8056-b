@@ -16,7 +16,7 @@ pragma solidity ^0.8.24;
  * only adjust the UI display layer. `Other` composes into the total but does not
  * drive the wrapper's yield-nonce (coupon) or capital-display logic.
  */
-enum UIScalingClass {
+enum MultiplierClass {
     Supply,
     Yield,
     Other

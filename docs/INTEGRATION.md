@@ -42,7 +42,7 @@ shared raw vault stays solvent by construction.
   window (startNonce, targetNonce)
      ├── LegToken  ──► unwrapCapital: raw * (1 - coupon)
      └── LegToken    ──► unwrapYield:   raw * coupon
-                           (both gated until getClassNonce(UIScalingClass.Yield) >= targetNonce)
+                           (both gated until getClassNonce(MultiplierClass.Yield) >= targetNonce)
 ```
 
 ---
@@ -132,7 +132,7 @@ deterministic and independent of later events.
 
 | Member | Meaning |
 |--------|---------|
-| `currentNonce()` | current yield nonce (`== scaledUnderlying.getClassNonce(UIScalingClass.Yield)`) |
+| `currentNonce()` | current yield nonce (`== scaledUnderlying.getClassNonce(MultiplierClass.Yield)`) |
 | `couponOf(start,target)` | frozen yield coupon `max(1 - Y_start/Y_target, 0)`, 1e18 fixed point |
 | `capitalShareOf(start,target)` | `1e18 - coupon` |
 | `previewUnwrap(amount,start,target)` | `(capitalRawOut, yieldLegRawOut)` — splits exactly to `amount` |

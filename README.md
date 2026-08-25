@@ -81,7 +81,7 @@ forge script script/DeployERC8056Composite.s.sol --rpc-url <RPC> --broadcast
 │   │   ├── ERC8056Composite.sol    # class-decomposed extension
 │   │   └── interfaces/             # extension-only interfaces
 │   │       ├── IERC8056Composite.sol   # class extension interface
-│   │       └── UIScalingClass.sol      # enum { Supply, Yield, Other }
+│   │       └── MultiplierClass.sol      # enum { Supply, Yield, Other }
 │   ├── wrapper/
 │   │   ├── ERC8056PairWrapper.sol      # Capital/Yield window wrapper (standalone)
 │   │   ├── ERC8056PairWrapperRegistry.sol # canonical per-asset wrapper discovery
@@ -124,7 +124,7 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 
 | Interface | Methods |
 |-----------|---------|
-| `IERC8056Composite` | per-class `uiScalingFactor*`, `uiMultiplierAt`, pending/history views, `getClassNonce(UIScalingClass.Yield)`, `classEventAtNonce(UIScalingClass.Yield, nonce)`, `setUIMultiplier`, `applyUIMultiplierDelta` |
+| `IERC8056Composite` | per-class `uiScalingFactor*`, `uiMultiplierAt`, pending/history views, `getClassNonce(MultiplierClass.Yield)`, `classEventAtNonce(MultiplierClass.Yield, nonce)`, `setUIMultiplier`, `applyUIMultiplierDelta` |
 | `ERC8056Composite` | per-class `toUIAmount(raw, class)`, `toUIAmountAt`, `fromUIAmount` |
 | `UIScalingMath` | `composeUiMultiplier(Supply, Yield, Other)` |
 
@@ -142,8 +142,8 @@ See [INTEGRATION](docs/INTEGRATION.md) for the full consumer guide.
 | Action | Payoff | Gate |
 |--------|--------|------|
 | `unwrap` (both legs) | exactly `amount` | anytime |
-| `unwrapYield` | `amount * coupon` | `getClassNonce(UIScalingClass.Yield) >= target` |
-| `unwrapCapital` | `amount * (1 - coupon)` | `getClassNonce(UIScalingClass.Yield) >= target` |
+| `unwrapYield` | `amount * coupon` | `getClassNonce(MultiplierClass.Yield) >= target` |
+| `unwrapCapital` | `amount * (1 - coupon)` | `getClassNonce(MultiplierClass.Yield) >= target` |
 
 Where `coupon = max(1 - Y_start / Y_target, 0)` in 1e18 fixed point, frozen at
 the target nonce from historical checkpoints only. Because `coupon + share = 1`,

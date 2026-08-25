@@ -5,7 +5,7 @@ import {ScalingTestBase} from "./ScalingTestBase.sol";
 import {ERC8056PairWrapper} from "../src/wrapper/ERC8056PairWrapper.sol";
 import {ERC8056PairWrapperHandler} from "./ERC8056PairWrapperHandler.sol";
 import {ERC8056Composite} from "../src/extensions/ERC8056Composite.sol";
-import {UIScalingClass} from "../src/extensions/interfaces/UIScalingClass.sol";
+import {MultiplierClass} from "../src/extensions/interfaces/MultiplierClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -67,8 +67,8 @@ contract ERC8056PairWrapperInvariantTest is ScalingTestBase {
         for (uint256 i = 0; i < count; i++) {
             (uint256 start, uint256 target) = wrapper.pairAt(i);
             if (wrapper.currentNonce() < target) continue;
-            uint256 yStart = underlying.classEventAtNonce(UIScalingClass.Yield, start).cumulativeFactor;
-            uint256 yTarget = underlying.classEventAtNonce(UIScalingClass.Yield, target).cumulativeFactor;
+            uint256 yStart = underlying.classEventAtNonce(MultiplierClass.Yield, start).cumulativeFactor;
+            uint256 yTarget = underlying.classEventAtNonce(MultiplierClass.Yield, target).cumulativeFactor;
             uint256 expected = yTarget > yStart ? Math.mulDiv(yTarget - yStart, 1e18, yTarget) : 0;
             assertEq(wrapper.couponOf(start, target), expected, "coupon drifted from history");
         }
