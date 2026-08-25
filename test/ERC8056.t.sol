@@ -81,7 +81,8 @@ contract ERC8056Test is Test {
         emit IERC8056.TransferWithUIAmount(alice, bob, 10 ether, 10 ether);
 
         vm.prank(alice);
-        token.transfer(bob, 10 ether);
+        bool ok = token.transfer(bob, 10 ether);
+        assertTrue(ok);
     }
 
     function test_revertWhenMultiplierNotPositive() public {

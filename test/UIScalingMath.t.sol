@@ -79,4 +79,71 @@ contract UIScalingMathTest is ScalingTestBase {
         assertEq(capital, 200 ether);
         assertEq(UIScalingMath.yieldLegRaw(RAW_STAKE, capital), 0);
     }
+
+    //==========================================================================//
+    // Fuzz                                                                      //
+    //==========================================================================//
+
+    uint256 internal constant MIN_FACTOR = 1e18;
+    uint256 internal constant MAX_FACTOR = 1e30;
+
+    /// @dev composeUiMultiplier must be order-independent. Each sequential
+    ///      mulDiv floors its intermediate, and one unit lost mid-pipeline is
+    ///      amplified by the remaining factors (<= 1e30 / 1e18 per step), so
+    ///      permutations may drift by a few trillionths of the smallest result.
+    function testFuzz_composeUiMultiplier_orderIndependent(uint256 a, uint256 b, uint256 c) public pure {
+        a = bound(a, MIN_FACTOR, MAX_FACTOR);
+        b = bound(b, MIN_FACTOR, MAX_FACTOR);
+        c = bound(c, MIN_FACTOR, MAX_FACTOR);
+
+        // two floored intermediates can each contribute <= MAX_FACTOR/N of drift
+        uint256 slack = 2 * (MAX_FACTOR / NEUTRAL) + 2;
+
+        uint256 abc = UIScalingMath.composeUiMultiplier(a, b, c);
+        assertApproxEqAbs(abc, UIScalingMath.composeUiMultiplier(a, c, b), slack);
+        assertApproxEqAbs(abc, UIScalingMath.composeUiMultiplier(b, a, c), slack);
+        assertApproxEqAbs(abc, UIScalingMath.composeUiMultiplier(b, c, a), slack);
+        assertApproxEqAbs(abc, UIScalingMath.composeUiMultiplier(c, a, b), slack);
+        assertApproxEqAbs(abc, UIScalingMath.composeUiMultiplier(c, b, a), slack);
+
+        // monotone in each argument
+        assertGe(abc, UIScalingMath.composeUiMultiplier(MIN_FACTOR, MIN_FACTOR, MIN_FACTOR));
+    }
+
+    /// @dev When the yield factor grew since stake (current >= atStake), the
+    ///      capital leg can never exceed the stake and the legs must conserve
+    ///      capitalRaw + yieldLegRaw == rawStaked exactly.
+    function testFuzz_legConservation_whenYieldGrew(
+        uint256 rawStaked,
+        uint256 factorAtStake,
+        uint256 growth
+    ) public pure {
+        rawStaked = bound(rawStaked, 0, 1e30);
+        factorAtStake = bound(factorAtStake, MIN_FACTOR, MAX_FACTOR);
+        growth = bound(growth, 0, MAX_FACTOR - MIN_FACTOR);
+        uint256 factorCurrent = factorAtStake + growth;
+
+        uint256 capital = UIScalingMath.capitalRaw(rawStaked, factorAtStake, factorCurrent);
+        assertLe(capital, rawStaked, "capital exceeds stake when yield grew");
+
+        uint256 yieldLeg = UIScalingMath.yieldLegRaw(rawStaked, capital);
+        assertEq(yieldLeg, rawStaked - capital, "yield leg is not the exact remainder");
+        assertEq(capital + yieldLeg, rawStaked, "legs do not conserve the staked amount");
+    }
+
+    /// @dev toUIAmount -> fromUIAmount must recover the raw amount within 1 wei
+    ///      for any neutral-or-higher factor (rounding only ever rounds down).
+    function testFuzz_conversion_roundTrip(uint256 rawAmount, uint256 factor) public pure {
+        rawAmount = bound(rawAmount, 0, type(uint128).max);
+        factor = bound(factor, MIN_FACTOR, MAX_FACTOR);
+
+        uint256 ui = UIScalingMath.toUIAmount(rawAmount, factor);
+        assertGe(ui, rawAmount, "UI amount below raw for factor >= 1e18");
+
+        uint256 roundTripped = UIScalingMath.fromUIAmount(ui, factor);
+        assertLe(roundTripped, rawAmount, "round trip inflated the raw amount");
+        if (rawAmount > 0) {
+            assertGe(roundTripped, rawAmount - 1, "round trip lost more than 1 wei");
+        }
+    }
 }
