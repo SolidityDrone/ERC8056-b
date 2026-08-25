@@ -118,24 +118,30 @@ contract ERC8056PairWrapperHandler is Test {
     function applyYieldDelta(uint256 deltaSeed, uint256 delaySeed) external {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
+        uint256 current = underlying.uiScalingFactor(MultiplierClass.Yield);
+        uint256 newMultiplier = Math.mulDiv(current, delta, 1e18);
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, delta, block.timestamp + delay, "", "", "");
+        underlying.setUIMultiplier(MultiplierClass.Yield, newMultiplier, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
     function applySupplyDelta(uint256 deltaSeed, uint256 delaySeed) external {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
+        uint256 current = underlying.uiScalingFactor(MultiplierClass.Supply);
+        uint256 newMultiplier = Math.mulDiv(current, delta, 1e18);
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(MultiplierClass.Supply, delta, block.timestamp + delay, "", "", "");
+        underlying.setUIMultiplier(MultiplierClass.Supply, newMultiplier, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
     function applyOtherDelta(uint256 deltaSeed, uint256 delaySeed) external {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
+        uint256 current = underlying.uiScalingFactor(MultiplierClass.Other);
+        uint256 newMultiplier = Math.mulDiv(current, delta, 1e18);
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(MultiplierClass.Other, delta, block.timestamp + delay, "", "", "");
+        underlying.setUIMultiplier(MultiplierClass.Other, newMultiplier, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 }

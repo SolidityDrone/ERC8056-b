@@ -124,7 +124,7 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 
 | Interface | Methods |
 |-----------|---------|
-| `IERC8056Composite` | per-class `uiScalingFactor*`, `uiMultiplierAt`, pending/history views, `getClassNonce(MultiplierClass.Yield)`, `classEventAtNonce(MultiplierClass.Yield, nonce)`, `setUIMultiplier`, `applyUIMultiplierDelta` |
+| `IERC8056Composite` | per-class `uiScalingFactor*`, `uiMultiplierAt`, pending/history views, `getClassNonce(MultiplierClass.Yield)`, `classEventAtNonce(MultiplierClass.Yield, nonce)`, `setUIMultiplier` |
 | `ERC8056Composite` | per-class `toUIAmount(raw, class)`, `toUIAmountAt`, `fromUIAmount` |
 | `UIScalingMath` | `composeUiMultiplier(Supply, Yield, Other)` |
 

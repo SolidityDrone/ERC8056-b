@@ -67,8 +67,8 @@ contract ERC8056PairWrapperInvariantTest is ScalingTestBase {
         for (uint256 i = 0; i < count; i++) {
             (uint256 start, uint256 target) = wrapper.pairAt(i);
             if (wrapper.currentNonce() < target) continue;
-            uint256 yStart = underlying.classEventAtNonce(MultiplierClass.Yield, start).cumulativeFactor;
-            uint256 yTarget = underlying.classEventAtNonce(MultiplierClass.Yield, target).cumulativeFactor;
+            uint256 yStart = underlying.classEventAtNonce(MultiplierClass.Yield, start).cumulativeMultiplier;
+            uint256 yTarget = underlying.classEventAtNonce(MultiplierClass.Yield, target).cumulativeMultiplier;
             uint256 expected = yTarget > yStart ? Math.mulDiv(yTarget - yStart, 1e18, yTarget) : 0;
             assertEq(wrapper.couponOf(start, target), expected, "coupon drifted from history");
         }

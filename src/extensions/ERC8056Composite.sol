@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC8056} from "../interfaces/IERC8056.sol";
 import {IERC8056Conversion} from "../interfaces/IERC8056Conversion.sol";
 import {IERC8056Balances} from "../interfaces/IERC8056Balances.sol";
@@ -52,7 +51,7 @@ contract ERC8056Composite is
                 pendingFactor: UIScalingMath.MULTIPLIER_DECIMALS,
                 effectiveAt: type(uint256).max
             });
-            _checkpoints[scalingClass].push(ScalingCheckpoint(0, UIScalingMath.MULTIPLIER_DECIMALS));
+            _checkpoints[scalingClass].push(ScalingCheckpoint(0, UIScalingMath.MULTIPLIER_DECIMALS, 0));
             _checkpointTimestamps[scalingClass].push(0);
         }
         emit UIMultiplierUpdated(0, UIScalingMath.MULTIPLIER_DECIMALS, block.timestamp);
@@ -84,10 +83,10 @@ contract ERC8056Composite is
         uint256 idx = Arrays.lowerBound(timestamps, timestamp);
         // If idx points to exact match, use it; otherwise go back one
         if (idx < history.length && timestamps[idx] == timestamp) {
-            return history[idx].cumulativeFactor;
+            return history[idx].cumulativeMultiplier;
         }
         // idx is first index > timestamp, so idx-1 is last index <= timestamp
-        return idx > 0 ? history[idx - 1].cumulativeFactor : UIScalingMath.MULTIPLIER_DECIMALS;
+        return idx > 0 ? history[idx - 1].cumulativeMultiplier : UIScalingMath.MULTIPLIER_DECIMALS;
     }
 
     function uiMultiplierAt(uint256 timestamp) public view override returns (uint256) {
@@ -154,7 +153,9 @@ contract ERC8056Composite is
         uint256 index = nonce; // genesis checkpoint occupies index 0; event nonce 1 is index 1
         if (index >= history.length) revert EventNotRecorded();
         if (history[index].effectiveAt > block.timestamp) revert EventNotEffective();
-        return ClassScalingEvent(history[index].effectiveAt, history[index].cumulativeFactor);
+        return ClassScalingEvent(
+            history[index].effectiveAt, history[index].cumulativeMultiplier, history[index].multiplierDelta
+        );
     }
 
     //==============================================================================//
@@ -168,20 +169,6 @@ contract ERC8056Composite is
         string calldata description,
         string calldata uri
     ) public override onlyOwner {
-        _setMultiplier(scalingClass, newMultiplier, effectiveAtTimestamp, id, description, uri);
-    }
-
-    function applyUIMultiplierDelta(
-        MultiplierClass scalingClass,
-        uint256 multiplierDelta,
-        uint256 effectiveAtTimestamp,
-        string calldata id,
-        string calldata description,
-        string calldata uri
-    ) external override onlyOwner {
-        require(multiplierDelta > 0, "ERC8056: delta must be positive");
-        uint256 currentFactor = _currentMultiplierForDelta(scalingClass);
-        uint256 newMultiplier = Math.mulDiv(currentFactor, multiplierDelta, UIScalingMath.MULTIPLIER_DECIMALS);
         _setMultiplier(scalingClass, newMultiplier, effectiveAtTimestamp, id, description, uri);
     }
 
@@ -212,11 +199,11 @@ contract ERC8056Composite is
 
         state.pendingFactor = newMultiplier;
         state.effectiveAt = effectiveAtTimestamp;
-        history.push(ScalingCheckpoint(effectiveAtTimestamp, newMultiplier));
-        _checkpointTimestamps[scalingClass].push(effectiveAtTimestamp);
 
         uint256 delta =
             oldMultiplier == 0 ? newMultiplier : newMultiplier * UIScalingMath.MULTIPLIER_DECIMALS / oldMultiplier;
+        history.push(ScalingCheckpoint(effectiveAtTimestamp, newMultiplier, delta));
+        _checkpointTimestamps[scalingClass].push(effectiveAtTimestamp);
         uint256 nonce = getClassNonce(scalingClass);
 
         emit UIScalingFactorUpdated(
@@ -250,7 +237,7 @@ contract ERC8056Composite is
     }
 
     function uiMultiplierAtNonce(MultiplierClass scalingClass, uint256 nonce) public view override returns (uint256) {
-        return classEventAtNonce(scalingClass, nonce).cumulativeFactor;
+        return classEventAtNonce(scalingClass, nonce).cumulativeMultiplier;
     }
 
     function newUIMultiplier() public view override returns (uint256) {
@@ -331,13 +318,6 @@ contract ERC8056Composite is
             return block.timestamp >= state.effectiveAt ? state.pendingFactor : state.activeFactor;
         }
         return state.pendingFactor;
-    }
-
-    function _currentMultiplierForDelta(MultiplierClass scalingClass) internal view returns (uint256) {
-        if (hasPendingUIMultiplier(scalingClass)) {
-            return newUIMultiplier(scalingClass);
-        }
-        return uiScalingFactor(scalingClass);
     }
 
     function _validateScalingClass(MultiplierClass scalingClass) internal pure {

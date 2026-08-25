@@ -44,14 +44,18 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
     // Helpers                                                                      //
     //==============================================================================//
     function _applyYieldDelta(uint256 delta, uint256 delay) internal {
+        uint256 current = underlying.uiScalingFactor(MultiplierClass.Yield);
+        uint256 newMultiplier = (current * delta) / 1e18;
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, delta, block.timestamp + delay, "", "", "");
+        underlying.setUIMultiplier(MultiplierClass.Yield, newMultiplier, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
     function _applySupplyDelta(uint256 delta, uint256 delay) internal {
+        uint256 current = underlying.uiScalingFactor(MultiplierClass.Supply);
+        uint256 newMultiplier = (current * delta) / 1e18;
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(MultiplierClass.Supply, delta, block.timestamp + delay, "", "", "");
+        underlying.setUIMultiplier(MultiplierClass.Supply, newMultiplier, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
@@ -419,7 +423,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)
         // schedule but do NOT warp past it
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, block.timestamp + 10 days, "", "", "");
+        underlying.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 10 days, "", "", "");
         assertEq(wrapper.currentNonce(), 1, "pending does not tick the nonce");
         vm.expectRevert(IERC8056PairWrapper.Locked.selector);
         vm.prank(alice);
@@ -433,7 +437,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         _advanceNonce(1 days); // nonce 1, Y = 1x
         _wrapLocked(alice, RAW_STAKE, 2); // pair (1,3)
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, block.timestamp + 5 days, "", "", "");
+        underlying.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 5 days, "", "", "");
         vm.warp(block.timestamp + 5 days); // lands before target: nonce 2, Y = 2x
         _advanceNonce(1 days); // nonce 3, Y = 2x
         assertEq(wrapper.couponOf(1, 3), 5e17);
@@ -453,7 +457,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1)
         // schedule a pending dividend: target nonce recorded but not yet effective
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, block.timestamp + 10 days, "", "", "");
+        underlying.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 10 days, "", "", "");
         vm.expectRevert(bytes4(keccak256("EventNotEffective()")));
         wrapper.previewUnwrapYield(RAW_STAKE, start, target);
         vm.expectRevert(bytes4(keccak256("EventNotEffective()")));
@@ -638,7 +642,7 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1)
 
         vm.prank(owner);
-        underlying.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
+        underlying.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
         vm.prank(owner);
         underlying.setUIMultiplier(MultiplierClass.Yield, 3e18, block.timestamp + 1 days, "", "", "");
 

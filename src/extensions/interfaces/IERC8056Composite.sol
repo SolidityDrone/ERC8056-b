@@ -13,12 +13,14 @@ import {MultiplierClass} from "./MultiplierClass.sol";
 interface IERC8056Composite {
     struct ScalingCheckpoint {
         uint256 effectiveAt;
-        uint256 cumulativeFactor;
+        uint256 cumulativeMultiplier;
+        uint256 multiplierDelta;
     }
 
     struct ClassScalingEvent {
         uint256 timestamp;
-        uint256 cumulativeFactor;
+        uint256 cumulativeMultiplier;
+        uint256 multiplierDelta;
     }
 
     struct Announcement {
@@ -103,16 +105,6 @@ interface IERC8056Composite {
     function setUIMultiplier(
         MultiplierClass scalingClass,
         uint256 newMultiplier,
-        uint256 effectiveAtTimestamp,
-        string calldata id,
-        string calldata description,
-        string calldata uri
-    ) external;
-
-    /// @dev Schedule a relative delta: `newMultiplier = current * multiplierDelta / 1e18`.
-    function applyUIMultiplierDelta(
-        MultiplierClass scalingClass,
-        uint256 multiplierDelta,
         uint256 effectiveAtTimestamp,
         string calldata id,
         string calldata description,

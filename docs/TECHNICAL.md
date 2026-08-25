@@ -19,13 +19,12 @@ keeps every EIP-8056 function untouched and adds:
 - **Per-class cumulative factors.** `uiScalingFactor(class)` and
   `uiScalingFactorAt(class, ts)` read a class factor; the composite
   `uiMultiplier() = Supply × Yield × Other` (canonical `composeUiMultiplier`).
-- **Scheduled (pending) updates per class.** `setUIMultiplier(class, factor,
-  ts)` schedules an absolute factor; `applyUIMultiplierDelta(class, delta, ts)`
-  applies a relative `new = current × delta / 1e18`. Nothing activates before
+- **Scheduled (pending) updates per class.** `setUIMultiplier(class, multiplier,
+  ts)` schedules an absolute multiplier. Nothing activates before
   `effectiveAt` — a pending update does not move today's multiplier.
-- **A checkpoint history per class.** `scalingCheckpointAt`, `scalingHistoryLength`. Each checkpoint is `{effectiveAt, cumulativeFactor}`. Once a checkpoint becomes effective it is permanent; a scheduled-but-not-yet-effective (pending) checkpoint is replaced if rescheduled, so only *landed* events are frozen.
+- **A checkpoint history per class.** `scalingCheckpointAt`, `scalingHistoryLength`. Each checkpoint is `{effectiveAt, cumulativeMultiplier, multiplierDelta}`. Once a checkpoint becomes effective it is permanent; a scheduled-but-not-yet-effective (pending) checkpoint is replaced if rescheduled, so only *landed* events are frozen.
 - **A yield-event log and nonce.** `getClassNonce(MultiplierClass.Yield)` counts effective Yield
-  updates; `classEventAtNonce(MultiplierClass.Yield, nonce)` returns `{timestamp, cumulativeFactor}`. This is the
+  updates; `classEventAtNonce(MultiplierClass.Yield, nonce)` returns `{timestamp, cumulativeMultiplier, multiplierDelta}`. This is the
   backbone of the Capital/Yield split.
 
 ### 1.2 What it solves
@@ -127,8 +126,8 @@ The yield claim is priced **frozen at the target nonce**, from historical
 checkpoints only:
 
 ```
-Y_s = classEventAtNonce(MultiplierClass.Yield, start).cumulativeFactor     # multiplier when the window opened
-Y_t = classEventAtNonce(MultiplierClass.Yield, target).cumulativeFactor    # multiplier when the window matured
+Y_s = classEventAtNonce(MultiplierClass.Yield, start).cumulativeMultiplier     # multiplier when the window opened
+Y_t = classEventAtNonce(MultiplierClass.Yield, target).cumulativeMultiplier    # multiplier when the window matured
 
 coupon = max(1 - Y_s / Y_t, 0)           # yield leg pays this fraction
 share  = 1 - coupon                      # capital leg pays the rest
@@ -154,7 +153,7 @@ Key properties:
 
 Because yield arrives as discrete events, the contract must learn *when* an
 event lands. That is the **central authority (CA) push** — the issuer (or a
-designated keeper) calls `applyUIMultiplierDelta(MultiplierClass.Yield, delta, ts)`
+designated keeper) calls `setUIMultiplier(MultiplierClass.Yield, newMultiplier, ts)`
 when a dividend is distributed. The nonce ticks when that pushed update becomes
 **effective** (its `effectiveAt` is reached), not at the moment of the call.
 This is the trusted source of truth for "a yield event happened," just as the
@@ -239,7 +238,7 @@ is sound and composable.
 - **UI multiplier** — EIP-8056's display scale (1e18 = 1.0x). Converts raw units
   to UI units.
 - **Scaling class** — a named reason for scaling: `Supply`, `Yield`, `Other`.
-- **Checkpoint** — `{effectiveAt, cumulativeFactor}`, one per class per update.
+- **Checkpoint** — `{effectiveAt, cumulativeMultiplier, multiplierDelta}`, one per class per update.
 - **Yield nonce** — the count of effective Yield events; the "event clock."
 - **Coupon** — the frozen yield fraction of a window: `max(1 - Y_s/Y_t, 0)`.
 - **CA push** — the central authority calling the extension when a dividend lands.

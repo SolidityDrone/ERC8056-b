@@ -20,7 +20,7 @@ import {LegToken} from "./LegToken.sol";
  *   `raw` Capital + `raw` Yield of that window (1:1 raw).
  *
  *   Claims are FROZEN at the target nonce, from historical checkpoints only:
- *     Y_s = classEventAtNonce(MultiplierClass.Yield, start).cumulativeFactor   Y_t = classEventAtNonce(MultiplierClass.Yield, target).cumulativeFactor
+ *     Y_s = classEventAtNonce(MultiplierClass.Yield, start).cumulativeMultiplier   Y_t = classEventAtNonce(MultiplierClass.Yield, target).cumulativeMultiplier
  *     yield coupon per token = max(1 - Y_s/Y_t, 0)   (0 when Y_t <= Y_s: principal protected)
  *     capital share per token = 1 - coupon
  *   The current multiplier is NEVER read; later dividends price nothing for a
@@ -283,8 +283,8 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
     // Internals
     // ------------------------------------------------------------------
     function _couponOf(uint256 startNonce, uint256 targetNonce) internal view returns (uint256) {
-        uint256 yStart = scaledUnderlying.classEventAtNonce(MultiplierClass.Yield, startNonce).cumulativeFactor;
-        uint256 yTarget = scaledUnderlying.classEventAtNonce(MultiplierClass.Yield, targetNonce).cumulativeFactor;
+        uint256 yStart = scaledUnderlying.classEventAtNonce(MultiplierClass.Yield, startNonce).cumulativeMultiplier;
+        uint256 yTarget = scaledUnderlying.classEventAtNonce(MultiplierClass.Yield, targetNonce).cumulativeMultiplier;
         if (yTarget <= yStart) return 0;
         return Math.mulDiv(yTarget - yStart, UIScalingMath.MULTIPLIER_DECIMALS, yTarget);
     }

@@ -18,13 +18,13 @@ contract ERC8056CompositeTest is ScalingTestBase {
         token.mint(holder, RAW_STAKE);
     }
 
-    function _scheduleScalingDelta(MultiplierClass scalingClass, uint256 factorDelta, uint256 delay)
+    function _scheduleMultiplier(MultiplierClass scalingClass, uint256 newMultiplier, uint256 delay)
         internal
         returns (uint256 effectiveAt)
     {
         effectiveAt = block.timestamp + delay;
         vm.prank(owner);
-        token.applyUIMultiplierDelta(scalingClass, factorDelta, effectiveAt, "", "", "");
+        token.setUIMultiplier(scalingClass, newMultiplier, effectiveAt, "", "", "");
     }
 
     function _warpToEffective(uint256 effectiveAt) internal {
@@ -48,11 +48,11 @@ contract ERC8056CompositeTest is ScalingTestBase {
     function test_initial_genesisCheckpoint() public view {
         IERC8056Composite.ScalingCheckpoint memory genesis = token.scalingCheckpointAt(MultiplierClass.Supply, 0);
         assertEq(genesis.effectiveAt, 0);
-        assertEq(genesis.cumulativeFactor, NEUTRAL);
+        assertEq(genesis.cumulativeMultiplier, NEUTRAL);
 
         IERC8056Composite.ScalingCheckpoint memory genesisOther = token.scalingCheckpointAt(MultiplierClass.Other, 0);
         assertEq(genesisOther.effectiveAt, 0);
-        assertEq(genesisOther.cumulativeFactor, NEUTRAL);
+        assertEq(genesisOther.cumulativeMultiplier, NEUTRAL);
     }
 
     function test_initial_supportsClassedInterface() public view {
@@ -63,8 +63,8 @@ contract ERC8056CompositeTest is ScalingTestBase {
     // Order independence                                                           //
     //==============================================================================//
     function test_orderIndependence_yieldThenSupply() public {
-        uint256 tYield = _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 1 hours);
-        uint256 tSupply = _scheduleScalingDelta(MultiplierClass.Supply, DOUBLE, 2 hours);
+        uint256 tYield = _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 hours);
+        uint256 tSupply = _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 2 hours);
 
         _warpToEffective(tYield);
         assertEq(token.uiScalingFactor(MultiplierClass.Yield), DOUBLE);
@@ -76,8 +76,8 @@ contract ERC8056CompositeTest is ScalingTestBase {
     }
 
     function test_orderIndependence_supplyThenYield() public {
-        uint256 tSupply = _scheduleScalingDelta(MultiplierClass.Supply, DOUBLE, 1 hours);
-        uint256 tYield = _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 2 hours);
+        uint256 tSupply = _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 1 hours);
+        uint256 tYield = _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 2 hours);
 
         _warpToEffective(tSupply);
         assertEq(token.uiScalingFactor(MultiplierClass.Supply), DOUBLE);
@@ -92,14 +92,14 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
         ERC8056Composite pathA = new ERC8056Composite("A", "A", owner);
         vm.startPrank(owner);
-        pathA.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, effectiveAt, "", "", "");
-        pathA.applyUIMultiplierDelta(MultiplierClass.Supply, DOUBLE, effectiveAt, "", "", "");
+        pathA.setUIMultiplier(MultiplierClass.Yield, DOUBLE, effectiveAt, "", "", "");
+        pathA.setUIMultiplier(MultiplierClass.Supply, DOUBLE, effectiveAt, "", "", "");
         vm.stopPrank();
 
         ERC8056Composite pathB = new ERC8056Composite("B", "B", owner);
         vm.startPrank(owner);
-        pathB.applyUIMultiplierDelta(MultiplierClass.Supply, DOUBLE, effectiveAt, "", "", "");
-        pathB.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, effectiveAt, "", "", "");
+        pathB.setUIMultiplier(MultiplierClass.Supply, DOUBLE, effectiveAt, "", "", "");
+        pathB.setUIMultiplier(MultiplierClass.Yield, DOUBLE, effectiveAt, "", "", "");
         vm.stopPrank();
 
         _warpToEffective(effectiveAt);
@@ -117,8 +117,8 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
     function test_uiScalingFactorAt_betweenScheduledUpdates() public {
         uint256 t0 = block.timestamp;
-        uint256 tYield = _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 1 days);
-        _scheduleScalingDelta(MultiplierClass.Supply, DOUBLE, 2 days);
+        uint256 tYield = _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 days);
+        _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 2 days);
 
         assertEq(token.uiScalingFactorAt(MultiplierClass.Yield, t0), NEUTRAL);
         assertEq(token.uiScalingFactorAt(MultiplierClass.Yield, tYield), DOUBLE);
@@ -130,8 +130,8 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
     function test_uiMultiplierAt_timeline() public {
         uint256 t0 = block.timestamp;
-        uint256 tYield = _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 1 days);
-        uint256 tSupply = _scheduleScalingDelta(MultiplierClass.Supply, DOUBLE, 2 days);
+        uint256 tYield = _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 days);
+        uint256 tSupply = _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 2 days);
 
         assertEq(token.uiMultiplierAt(t0), NEUTRAL);
         assertEq(token.uiMultiplierAt(tYield), DOUBLE);
@@ -140,18 +140,18 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
     function test_history_appendsAndOverwritesPending() public {
         uint256 t0 = block.timestamp;
-        uint256 tFirst = _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 1 days);
+        uint256 tFirst = _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 days);
         assertEq(token.scalingHistoryLength(MultiplierClass.Yield), 2);
 
         IERC8056Composite.ScalingCheckpoint memory first = token.scalingCheckpointAt(MultiplierClass.Yield, 1);
         assertEq(first.effectiveAt, tFirst);
-        assertEq(first.cumulativeFactor, DOUBLE);
+        assertEq(first.cumulativeMultiplier, DOUBLE);
 
-        _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 2 days);
+        _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 2 days);
         assertEq(token.scalingHistoryLength(MultiplierClass.Yield), 2);
 
         _warpToEffective(t0 + 2 days + 1 hours);
-        _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 1 days);
+        _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 days);
         assertEq(token.scalingHistoryLength(MultiplierClass.Yield), 3);
     }
 
@@ -159,14 +159,14 @@ contract ERC8056CompositeTest is ScalingTestBase {
     // Conversion overloads                                                         //
     //==============================================================================//
     function test_toUIAmountAt_compositeHistory() public {
-        uint256 tYield = _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 1 days);
+        uint256 tYield = _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 days);
         _warpToEffective(tYield);
         assertEq(token.toUIAmountAt(RAW_STAKE, tYield - 1), RAW_STAKE);
         assertEq(token.toUIAmountAt(RAW_STAKE, tYield), 200 ether);
     }
 
     function test_toUIAmount_withScalingClass() public {
-        _scheduleScalingDelta(MultiplierClass.Supply, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
         assertEq(token.toUIAmount(RAW_STAKE, MultiplierClass.Supply), 200 ether);
@@ -175,7 +175,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
     }
 
     function test_toUIAmountAt_withScalingClass() public {
-        uint256 tYield = _scheduleScalingDelta(MultiplierClass.Yield, 1.5e18, 1 days);
+        uint256 tYield = _scheduleMultiplier(MultiplierClass.Yield, 1.5e18, 1 days);
         assertEq(token.toUIAmountAt(RAW_STAKE, MultiplierClass.Yield, tYield - 1), RAW_STAKE);
         assertEq(token.toUIAmountAt(RAW_STAKE, MultiplierClass.Yield, tYield), 150 ether);
         assertEq(token.toUIAmountAt(RAW_STAKE, MultiplierClass.Supply, tYield), RAW_STAKE);
@@ -185,18 +185,18 @@ contract ERC8056CompositeTest is ScalingTestBase {
     // Supply class                                                                 //
     //==============================================================================//
     function test_supply_reverseSplitResetsFactor() public {
-        _scheduleScalingDelta(MultiplierClass.Supply, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
         assertEq(token.uiScalingFactor(MultiplierClass.Supply), DOUBLE);
 
-        _scheduleScalingDelta(MultiplierClass.Supply, HALF, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Supply, HALF, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
-        assertEq(token.uiScalingFactor(MultiplierClass.Supply), NEUTRAL);
+        assertEq(token.uiScalingFactor(MultiplierClass.Supply), HALF);
         assertEq(token.uiScalingFactor(MultiplierClass.Yield), NEUTRAL);
     }
 
     function test_supply_doesNotAffectYieldFactor() public {
-        _scheduleScalingDelta(MultiplierClass.Supply, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
         assertEq(token.uiScalingFactor(MultiplierClass.Yield), NEUTRAL);
         assertEq(token.uiScalingFactor(MultiplierClass.Supply), DOUBLE);
@@ -206,7 +206,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
     // Yield class                                                                  //
     //==============================================================================//
     function test_yield_accretionDoublesUIBalance() public {
-        _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
         assertEq(token.uiScalingFactor(MultiplierClass.Yield), DOUBLE);
@@ -215,10 +215,10 @@ contract ERC8056CompositeTest is ScalingTestBase {
     }
 
     function test_yield_accretionAfterSupply_usesSeparateClasses() public {
-        _scheduleScalingDelta(MultiplierClass.Supply, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
-        _scheduleScalingDelta(MultiplierClass.Yield, 1.05e18, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Yield, 1.05e18, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
         assertEq(token.uiScalingFactor(MultiplierClass.Supply), DOUBLE);
@@ -229,9 +229,9 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
     function test_yield_growthSinceStake() public {
         uint256 yieldAtStake = NEUTRAL;
-        _scheduleScalingDelta(MultiplierClass.Yield, 1.5e18, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Yield, 1.5e18, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
-        _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Yield, 3e18, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
         assertEq(UIScalingMath.yieldGrowthSinceStake(yieldAtStake, token.uiScalingFactor(MultiplierClass.Yield)), 3e18);
@@ -241,7 +241,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
     // Other class                                                                  //
     //==============================================================================//
     function test_other_composesIntoMultiplier() public {
-        _scheduleScalingDelta(MultiplierClass.Other, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Other, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
         assertEq(token.uiScalingFactor(MultiplierClass.Other), DOUBLE);
@@ -252,11 +252,11 @@ contract ERC8056CompositeTest is ScalingTestBase {
     }
 
     function test_other_multipliesSupplyAndYield() public {
-        _scheduleScalingDelta(MultiplierClass.Supply, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
-        _scheduleScalingDelta(MultiplierClass.Yield, 1.5e18, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Yield, 1.5e18, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
-        _scheduleScalingDelta(MultiplierClass.Other, 3e18, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Other, 3e18, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
         assertEq(token.uiScalingFactor(MultiplierClass.Supply), DOUBLE);
@@ -278,7 +278,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
     //==============================================================================//
     function test_capitalRaw_yieldAccretionReducesPrincipal() public {
         uint256 yieldAtStake = NEUTRAL;
-        _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
         uint256 yieldNow = token.uiScalingFactor(MultiplierClass.Yield);
@@ -291,7 +291,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
     }
 
     function test_capitalRaw_supplyDoesNotReducePrincipal() public {
-        _scheduleScalingDelta(MultiplierClass.Supply, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
         uint256 capital = UIScalingMath.capitalRaw(RAW_STAKE, NEUTRAL, token.uiScalingFactor(MultiplierClass.Yield));
@@ -315,17 +315,17 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
         if (yieldFirst) {
             vm.prank(owner);
-            local.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 hours, "", "", "");
+            local.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 hours, "", "", "");
             _warpToEffective(block.timestamp + 1 hours);
             vm.prank(owner);
-            local.applyUIMultiplierDelta(MultiplierClass.Supply, DOUBLE, block.timestamp + 1 hours, "", "", "");
+            local.setUIMultiplier(MultiplierClass.Supply, DOUBLE, block.timestamp + 1 hours, "", "", "");
             _warpToEffective(block.timestamp + 1 hours);
         } else {
             vm.prank(owner);
-            local.applyUIMultiplierDelta(MultiplierClass.Supply, DOUBLE, block.timestamp + 1 hours, "", "", "");
+            local.setUIMultiplier(MultiplierClass.Supply, DOUBLE, block.timestamp + 1 hours, "", "", "");
             _warpToEffective(block.timestamp + 1 hours);
             vm.prank(owner);
-            local.applyUIMultiplierDelta(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 hours, "", "", "");
+            local.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 hours, "", "", "");
             _warpToEffective(block.timestamp + 1 hours);
         }
 
@@ -360,7 +360,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
         _warpToEffective(stakeTime + 90 days);
         vm.prank(owner);
-        local.applyUIMultiplierDelta(MultiplierClass.Yield, 1.5e18, block.timestamp + 1 hours, "", "", "");
+        local.setUIMultiplier(MultiplierClass.Yield, 1.5e18, block.timestamp + 1 hours, "", "", "");
         _warpToEffective(block.timestamp + 1 hours);
 
         assertEq(local.uiScalingFactorAt(MultiplierClass.Yield, stakeTime), NEUTRAL);
@@ -376,11 +376,11 @@ contract ERC8056CompositeTest is ScalingTestBase {
         uint256 tSupply = tYield + 90 days;
 
         _warpToEffective(tYield);
-        _scheduleScalingDelta(MultiplierClass.Yield, 1.5e18, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Yield, 1.5e18, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
         _warpToEffective(tSupply);
-        _scheduleScalingDelta(MultiplierClass.Supply, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 1 hours);
         _warpToEffective(block.timestamp + 1 hours);
 
         assertEq(token.uiScalingFactorAt(MultiplierClass.Yield, tYield), NEUTRAL);
@@ -392,7 +392,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
     struct ScalingAction {
         MultiplierClass scalingClass;
-        uint256 factorDelta;
+        uint256 newMultiplier;
         uint256 dayOffset;
     }
 
@@ -408,16 +408,16 @@ contract ERC8056CompositeTest is ScalingTestBase {
         actions = new ScalingAction[](4);
         actions[0] = ScalingAction(MultiplierClass.Yield, 1.5e18, 90);
         actions[1] = ScalingAction(MultiplierClass.Supply, DOUBLE, 180);
-        actions[2] = ScalingAction(MultiplierClass.Supply, HALF, 270);
-        actions[3] = ScalingAction(MultiplierClass.Yield, DOUBLE, 330);
+        actions[2] = ScalingAction(MultiplierClass.Supply, NEUTRAL, 270);
+        actions[3] = ScalingAction(MultiplierClass.Yield, 3e18, 330);
     }
 
     function _yearLockOrderingB() private pure returns (ScalingAction[] memory actions) {
         actions = new ScalingAction[](4);
         actions[0] = ScalingAction(MultiplierClass.Supply, DOUBLE, 60);
         actions[1] = ScalingAction(MultiplierClass.Yield, 1.5e18, 120);
-        actions[2] = ScalingAction(MultiplierClass.Yield, DOUBLE, 240);
-        actions[3] = ScalingAction(MultiplierClass.Supply, HALF, 360);
+        actions[2] = ScalingAction(MultiplierClass.Yield, 3e18, 240);
+        actions[3] = ScalingAction(MultiplierClass.Supply, NEUTRAL, 360);
     }
 
     function _runYearLockScenario(ScalingAction[] memory actions) private returns (YearLockSnapshot memory snapshot) {
@@ -428,8 +428,8 @@ contract ERC8056CompositeTest is ScalingTestBase {
         for (uint256 i = 0; i < actions.length; i++) {
             _warpToEffective(start + actions[i].dayOffset * 1 days);
             vm.prank(owner);
-            local.applyUIMultiplierDelta(
-                actions[i].scalingClass, actions[i].factorDelta, block.timestamp + 1 hours, "", "", ""
+            local.setUIMultiplier(
+                actions[i].scalingClass, actions[i].newMultiplier, block.timestamp + 1 hours, "", "", ""
             );
             _warpToEffective(block.timestamp + 1 hours);
         }
@@ -445,7 +445,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
     // Scheduling & reverts                                                         //
     //==============================================================================//
     function test_schedule_pendingVisibleBeforeEffective() public {
-        uint256 effectiveAt = _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 1 days);
+        uint256 effectiveAt = _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 days);
         assertTrue(token.hasPendingUIMultiplier(MultiplierClass.Yield));
         assertEq(token.newUIMultiplier(MultiplierClass.Yield), DOUBLE);
         assertEq(token.uiScalingFactor(MultiplierClass.Yield), NEUTRAL);
@@ -463,13 +463,13 @@ contract ERC8056CompositeTest is ScalingTestBase {
             0, // nonce 0: not yet effective
             IERC8056Composite.Announcement({id: "", description: "", uri: ""})
         );
-        _scheduleScalingDelta(MultiplierClass.Yield, DOUBLE, 1 hours);
+        _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 hours);
     }
 
-    function test_revert_zeroDelta() public {
+    function test_revert_zeroMultiplier() public {
         vm.prank(owner);
-        vm.expectRevert("ERC8056: delta must be positive");
-        token.applyUIMultiplierDelta(MultiplierClass.Yield, 0, block.timestamp + 1, "", "", "");
+        vm.expectRevert("ERC8056: factor must be positive");
+        token.setUIMultiplier(MultiplierClass.Yield, 0, block.timestamp + 1, "", "", "");
     }
 
     function test_revert_effectiveAtNotFuture() public {
@@ -531,7 +531,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
         IERC8056Composite.ClassScalingEvent memory ev = token.classEventAtNonce(MultiplierClass.Yield, 1);
         assertEq(ev.timestamp, t1);
-        assertEq(ev.cumulativeFactor, 15e17);
+        assertEq(ev.cumulativeMultiplier, 15e17);
     }
 
     function test_classEventAtNonce_notRecorded_reverts() public {
@@ -552,14 +552,14 @@ contract ERC8056CompositeTest is ScalingTestBase {
     }
 
     function test_binarySearch_betweenCheckpoints() public {
-        uint256 t1 = _scheduleScalingDelta(MultiplierClass.Yield, 1.5e18, 1 hours);
+        uint256 t1 = _scheduleMultiplier(MultiplierClass.Yield, 1.5e18, 1 hours);
         vm.warp(t1); // make first effective
-        uint256 t2 = _scheduleScalingDelta(MultiplierClass.Yield, 2e18, 2 hours);
+        uint256 t2 = _scheduleMultiplier(MultiplierClass.Yield, 2e18, 2 hours);
 
         assertEq(token.uiScalingFactorAt(MultiplierClass.Yield, t1 - 1), NEUTRAL);
         assertEq(token.uiScalingFactorAt(MultiplierClass.Yield, t1), 1.5e18);
         assertEq(token.uiScalingFactorAt(MultiplierClass.Yield, t2 - 1), 1.5e18);
-        assertEq(token.uiScalingFactorAt(MultiplierClass.Yield, t2), 3e18);
+        assertEq(token.uiScalingFactorAt(MultiplierClass.Yield, t2), 2e18);
     }
 
     function test_binarySearch_exactTimestamp() public {
@@ -603,7 +603,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
         IERC8056Composite.ClassScalingEvent memory ev = token.classEventAtNonce(MultiplierClass.Supply, 1);
         assertEq(ev.timestamp, t1);
-        assertEq(ev.cumulativeFactor, DOUBLE);
+        assertEq(ev.cumulativeMultiplier, DOUBLE);
     }
 
     function test_uiMultiplierAtNonce_composite() public {

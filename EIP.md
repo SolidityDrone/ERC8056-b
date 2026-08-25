@@ -109,12 +109,14 @@ Implementations SHOULD NOT add additional enum values without a formal amendment
 interface IERC8056Composite {
     struct ScalingCheckpoint {
         uint256 effectiveAt;
-        uint256 cumulativeFactor;
+        uint256 cumulativeMultiplier;
+        uint256 multiplierDelta;
     }
 
     struct ClassScalingEvent {
         uint256 timestamp;
-        uint256 cumulativeFactor;
+        uint256 cumulativeMultiplier;
+        uint256 multiplierDelta;
     }
 
     struct Announcement {
@@ -165,15 +167,6 @@ interface IERC8056Composite {
         string calldata description,
         string calldata uri
     ) external;
-
-    function applyUIMultiplierDelta(
-        MultiplierClass scalingClass,
-        uint256 multiplierDelta,
-        uint256 effectiveAtTimestamp,
-        string calldata id,
-        string calldata description,
-        string calldata uri
-    ) external;
 }
 ```
 
@@ -193,18 +186,17 @@ interface IERC8056Composite {
 
 #### Checkpoint history
 
-7. Each class MUST maintain an append-only checkpoint history. Each checkpoint MUST record `{effectiveAt, cumulativeFactor}`.
-8. `scalingCheckpointAt(class, index)` MUST return checkpoint at the given 0-based index, where index 0 is the genesis checkpoint (`effectiveAt = 0`, `cumulativeFactor = 1e18`).
+7. Each class MUST maintain an append-only checkpoint history. Each checkpoint MUST record `{effectiveAt, cumulativeMultiplier, multiplierDelta}`.
+8. `scalingCheckpointAt(class, index)` MUST return checkpoint at the given 0-based index, where index 0 is the genesis checkpoint (`effectiveAt = 0`, `cumulativeMultiplier = 1e18`, `multiplierDelta = 0`).
 9. `scalingHistoryLength(class)` MUST return the total number of checkpoints including genesis.
 10. Once a checkpoint becomes effective (`effectiveAt <= block.timestamp`), it MUST NOT be modified or replaced.
 11. A pending (not yet effective) checkpoint MAY be replaced if the same class is rescheduled before activation.
 
 #### Scheduled (pending) updates
 
-12. `setUIMultiplier(class, newMultiplier, effectiveAtTimestamp, id, description, uri)` MUST schedule an absolute cumulative factor. `effectiveAtTimestamp` MUST be in the future.
-13. `applyUIMultiplierDelta(class, multiplierDelta, effectiveAtTimestamp, id, description, uri)` MUST schedule a relative update: `newMultiplier = current * multiplierDelta / 1e18`, where `current` is the effective factor at the time of the call.
-14. A pending update MUST NOT affect the current effective factor or the composite multiplier until `effectiveAt` is reached.
-15. `UIScalingFactorUpdated` MUST be emitted when a factor is scheduled, with `{newMultiplier, multiplierDelta, effectiveAtTimestamp, classNonce, announcement}`.
+12. `setUIMultiplier(class, newMultiplier, effectiveAtTimestamp, id, description, uri)` MUST schedule an absolute cumulative multiplier. `effectiveAtTimestamp` MUST be in the future.
+13. A pending update MUST NOT affect the current effective multiplier or the composite multiplier until `effectiveAt` is reached.
+14. `UIScalingFactorUpdated` MUST be emitted when a multiplier is scheduled, with `{newMultiplier, multiplierDelta, effectiveAtTimestamp, classNonce, announcement}`.
 
 #### Yield-event derivation
 
@@ -304,9 +296,9 @@ contract ERC8056Composite is ERC20, ERC165, IERC8056Composite, Ownable {
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
         uint256 idx = Arrays.lowerBound(timestamps, timestamp);
         if (idx < history.length && timestamps[idx] == timestamp) {
-            return history[idx].cumulativeFactor;
+            return history[idx].cumulativeMultiplier;
         }
-        return idx > 0 ? history[idx - 1].cumulativeFactor : UIScalingMath.MULTIPLIER_DECIMALS;
+        return idx > 0 ? history[idx - 1].cumulativeMultiplier : UIScalingMath.MULTIPLIER_DECIMALS;
     }
 
     function getClassNonce(MultiplierClass scalingClass) public view returns (uint256) {
@@ -329,7 +321,7 @@ contract ERC8056Composite is ERC20, ERC165, IERC8056Composite, Ownable {
         ...
     }
 
-    // setUIMultiplier and applyUIMultiplierDelta schedule pending updates,
+    // setUIMultiplier schedules pending updates,
     // flush any existing pending checkpoint, and emit UIScalingFactorUpdated.
     // ... (full implementation in reference repo)
 }

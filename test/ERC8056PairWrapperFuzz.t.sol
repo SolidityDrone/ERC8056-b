@@ -106,7 +106,7 @@ contract ERC8056PairWrapperFuzzTest is ScalingTestBase {
         // random dividend events BEFORE unwrap
         for (uint256 i = 0; i < dividends; i++) {
             vm.prank(owner);
-            underlying.applyUIMultiplierDelta(
+            underlying.setUIMultiplier(
                 MultiplierClass.Yield,
                 bound(uint256(keccak256(abi.encode(i))), 5e17, 2e18),
                 block.timestamp + 1 days,
