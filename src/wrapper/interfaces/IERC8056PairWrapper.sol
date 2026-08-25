@@ -57,7 +57,7 @@ interface IERC8056PairWrapper {
     /// @dev Total raw underlying locked across all windows.
     function rawLocked() external view returns (uint256);
 
-    /// @dev Current yield nonce (effective dividend count); == scaledUnderlying.yieldNonce().
+    /// @dev Current yield nonce (effective dividend count); == scaledUnderlying.getClassNonce(UIScalingClass.Yield).
     function currentNonce() external view returns (uint256);
 
     // ------------------------------------------------------------------ window enumeration
@@ -128,10 +128,10 @@ interface IERC8056PairWrapper {
     function unwrap(uint256 amount, uint256 startNonce, uint256 targetNonce) external;
 
     /// @dev Burn `amount` yield leg of window (start, target) for `amount * coupon`.
-    ///      Only after yieldNonce() >= targetNonce.
+    ///      Only after getClassNonce(UIScalingClass.Yield) >= targetNonce.
     function unwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce) external;
 
     /// @dev Burn `amount` capital leg of window (start, target) for `amount * (1 - coupon)`.
-    ///      Only after yieldNonce() >= targetNonce.
+    ///      Only after getClassNonce(UIScalingClass.Yield) >= targetNonce.
     function unwrapCapital(uint256 amount, uint256 startNonce, uint256 targetNonce) external;
 }

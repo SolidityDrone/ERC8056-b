@@ -27,7 +27,7 @@ contract ERC8056PairWrapperFuzzTest is ScalingTestBase {
 
     function _setYieldFactor(uint256 factor, uint256 delay) internal {
         vm.prank(owner);
-        underlying.setUIScalingFactor(UIScalingClass.Yield, factor, block.timestamp + delay, "", "", "");
+        underlying.setUIMultiplier(UIScalingClass.Yield, factor, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
@@ -106,7 +106,7 @@ contract ERC8056PairWrapperFuzzTest is ScalingTestBase {
         // random dividend events BEFORE unwrap
         for (uint256 i = 0; i < dividends; i++) {
             vm.prank(owner);
-            underlying.applyUIScalingDelta(
+            underlying.applyUIMultiplierDelta(
                 UIScalingClass.Yield,
                 bound(uint256(keccak256(abi.encode(i))), 5e17, 2e18),
                 block.timestamp + 1 days,

@@ -43,7 +43,7 @@ Lending, options, and auction protocols work by separating a token's **principal
 - An option writer sells the *yield upside*.
 - An auction sells rights to future distributions.
 
-To split a token into a `CapitalToken` (claims the frozen principal share) and a `YieldToken` (claims the frozen coupon), the contract must know **which part of the multiplier change is yield vs supply**, across a specific window. With a single `uiMultiplier`, that split is impossible -- you cannot attribute a 2x move between principal and yield, or freeze a window's payout, without knowing why each change happened and when.
+To split a token into a `LegToken` (claims the frozen principal share) and a `LegToken` (claims the frozen coupon), the contract must know **which part of the multiplier change is yield vs supply**, across a specific window. With a single `uiMultiplier`, that split is impossible -- you cannot attribute a 2x move between principal and yield, or freeze a window's payout, without knowing why each change happened and when.
 
 On-chain tokenized RWA -- such as Robinhood Chain stock tokens -- currently expose only a scalar multiplier with no class attribution and no history to price a window against. The Capital/Yield split is therefore not doable.
 
@@ -61,7 +61,7 @@ Once classes exist:
 
 Protocols can then build on RWA without trusting a single scalar:
 
-- **Lending** -- lend `CapitalToken`, accrue and sell `YieldToken` as interest.
+- **Lending** -- lend `LegToken`, accrue and sell `LegToken` as interest.
 - **Options** -- write the yield coupon as the option's underlying upside.
 - **Auctions** -- auction the right to a window's future distributions.
 - **Any** application that needs to separate "I own the asset" from "I own its growth" on a token that only publishes UI scaling.
@@ -112,9 +112,9 @@ interface IERC8056Composite {
         uint256 cumulativeFactor;
     }
 
-    struct YieldEvent {
+    struct ClassScalingEvent {
         uint256 timestamp;
-        uint256 multiplier;
+        uint256 cumulativeFactor;
     }
 
     struct Announcement {
@@ -125,8 +125,8 @@ interface IERC8056Composite {
 
     event UIScalingFactorUpdated(
         UIScalingClass indexed scalingClass,
-        uint256 newFactor,
-        uint256 factorDelta,
+        uint256 newMultiplier,
+        uint256 multiplierDelta,
         uint256 effectiveAtTimestamp,
         uint256 classNonce,
         Announcement announcement
@@ -140,9 +140,9 @@ interface IERC8056Composite {
 
     // ---- Pending (scheduled) updates ----
 
-    function pendingUIScalingFactor(UIScalingClass scalingClass) external view returns (uint256);
-    function scalingFactorEffectiveAt(UIScalingClass scalingClass) external view returns (uint256);
-    function hasPendingScalingFactor(UIScalingClass scalingClass) external view returns (bool);
+    function newUIMultiplier(UIScalingClass scalingClass) external view returns (uint256);
+    function effectiveAt(UIScalingClass scalingClass) external view returns (uint256);
+    function hasPendingUIMultiplier(UIScalingClass scalingClass) external view returns (bool);
 
     // ---- Checkpoint history ----
 
@@ -152,23 +152,23 @@ interface IERC8056Composite {
 
     // ---- Yield events (derived from Yield checkpoint history) ----
 
-    function yieldNonce() external view returns (uint256);
-    function yieldEventAt(uint256 nonce) external view returns (YieldEvent memory);
+    function getClassNonce(UIScalingClass.Yield) external view returns (uint256);
+    function classEventAtNonce(UIScalingClass.Yield, uint256 nonce) external view returns (ClassScalingEvent memory);
 
     // ---- State-changing: schedule updates ----
 
-    function setUIScalingFactor(
+    function setUIMultiplier(
         UIScalingClass scalingClass,
-        uint256 newFactor,
+        uint256 newMultiplier,
         uint256 effectiveAtTimestamp,
         string calldata id,
         string calldata description,
         string calldata uri
     ) external;
 
-    function applyUIScalingDelta(
+    function applyUIMultiplierDelta(
         UIScalingClass scalingClass,
-        uint256 factorDelta,
+        uint256 multiplierDelta,
         uint256 effectiveAtTimestamp,
         string calldata id,
         string calldata description,
@@ -201,15 +201,15 @@ interface IERC8056Composite {
 
 #### Scheduled (pending) updates
 
-12. `setUIScalingFactor(class, newFactor, effectiveAtTimestamp, id, description, uri)` MUST schedule an absolute cumulative factor. `effectiveAtTimestamp` MUST be in the future.
-13. `applyUIScalingDelta(class, factorDelta, effectiveAtTimestamp, id, description, uri)` MUST schedule a relative update: `newFactor = current * factorDelta / 1e18`, where `current` is the effective factor at the time of the call.
+12. `setUIMultiplier(class, newMultiplier, effectiveAtTimestamp, id, description, uri)` MUST schedule an absolute cumulative factor. `effectiveAtTimestamp` MUST be in the future.
+13. `applyUIMultiplierDelta(class, multiplierDelta, effectiveAtTimestamp, id, description, uri)` MUST schedule a relative update: `newMultiplier = current * multiplierDelta / 1e18`, where `current` is the effective factor at the time of the call.
 14. A pending update MUST NOT affect the current effective factor or the composite multiplier until `effectiveAt` is reached.
-15. `UIScalingFactorUpdated` MUST be emitted when a factor is scheduled, with `{newFactor, factorDelta, effectiveAtTimestamp, classNonce, announcement}`.
+15. `UIScalingFactorUpdated` MUST be emitted when a factor is scheduled, with `{newMultiplier, multiplierDelta, effectiveAtTimestamp, classNonce, announcement}`.
 
 #### Yield-event derivation
 
 16. The yield nonce MUST be derived from the `Yield` checkpoint history: it counts checkpoints with `effectiveAt <= block.timestamp`, excluding the genesis checkpoint (index 0) and any pending (future) updates.
-17. `yieldEventAt(nonce)` MUST map nonce `n` to checkpoint index `n` (1-based events; genesis is index 0, not an event).
+17. `classEventAtNonce(UIScalingClass.Yield, nonce)` MUST map nonce `n` to checkpoint index `n` (1-based events; genesis is index 0, not an event).
 18. A scheduled-but-not-effective Yield update MUST NOT consume a nonce.
 19. The nonce MUST tick only when a Yield-class update actually becomes effective.
 
@@ -283,35 +283,53 @@ contract ERC8056Composite is ERC20, ERC165, IERC8056Composite, Ownable {
         uint256 effectiveAt;
     }
 
-    uint256 private constant MULTIPLIER_DECIMALS = 1e18;
-    mapping(UIScalingClass => ClassScalingState) private _classState;
+    mapping(UIScalingClass => ClassScalingState) private _classScaling;
     mapping(UIScalingClass => ScalingCheckpoint[]) private _checkpoints;
-    mapping(UIScalingClass => uint256) private _classNonces;
-    mapping(UIScalingClass => bool) private _hasPending;
+    mapping(UIScalingClass => uint256[]) private _checkpointTimestamps;
 
     function uiMultiplier() public view returns (uint256) {
         return UIScalingMath.composeUiMultiplier(
-            _classState[UIScalingClass.Supply].activeFactor,
-            _classState[UIScalingClass.Yield].activeFactor,
-            _classState[UIScalingClass.Other].activeFactor
+            uiScalingFactor(UIScalingClass.Supply),
+            uiScalingFactor(UIScalingClass.Yield),
+            uiScalingFactor(UIScalingClass.Other)
         );
     }
 
     function uiScalingFactor(UIScalingClass scalingClass) public view returns (uint256) {
-        return _classState[scalingClass].activeFactor;
+        return uiScalingFactorAt(scalingClass, block.timestamp);
     }
 
-    function yieldNonce() public view returns (uint256) {
+    function uiScalingFactorAt(UIScalingClass scalingClass, uint256 timestamp) public view returns (uint256) {
+        uint256[] storage timestamps = _checkpointTimestamps[scalingClass];
+        ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
+        uint256 idx = Arrays.lowerBound(timestamps, timestamp);
+        if (idx < history.length && timestamps[idx] == timestamp) {
+            return history[idx].cumulativeFactor;
+        }
+        return idx > 0 ? history[idx - 1].cumulativeFactor : UIScalingMath.MULTIPLIER_DECIMALS;
+    }
+
+    function getClassNonce(UIScalingClass scalingClass) public view returns (uint256) {
+        ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
         uint256 nonce;
-        ScalingCheckpoint[] storage cks = _checkpoints[UIScalingClass.Yield];
-        for (uint256 i = 1; i < cks.length; i++) {
-            if (cks[i].effectiveAt <= block.timestamp) nonce++;
+        for (uint256 i = 1; i < history.length; i++) {
+            if (history[i].effectiveAt <= block.timestamp) nonce++;
             else break;
         }
         return nonce;
     }
 
-    // setUIScalingFactor and applyUIScalingDelta schedule pending updates,
+    function classEventAtNonce(UIScalingClass scalingClass, uint256 nonce)
+        public
+        view
+        returns (ClassScalingEvent memory)
+    {
+        // Binary search via Arrays.lowerBound on _checkpointTimestamps
+        // Returns the (nonce+1)th effective checkpoint
+        ...
+    }
+
+    // setUIMultiplier and applyUIMultiplierDelta schedule pending updates,
     // flush any existing pending checkpoint, and emit UIScalingFactorUpdated.
     // ... (full implementation in reference repo)
 }
@@ -319,12 +337,12 @@ contract ERC8056Composite is ERC20, ERC165, IERC8056Composite, Ownable {
 
 ### Capital/Yield wrapper (practical reference)
 
-The wrapper locks raw RWA and mints per-window `CapitalToken` / `YieldToken` pairs against the extension's yield-event history. Key operations:
+The wrapper locks raw RWA and mints per-window `LegToken` pairs (capital and yield legs) against the extension's yield-event history. Key operations:
 
 - `wrap(rawAmount, lockNonces)` -- locks underlying, mints 1:1 capital+yield for the window `(currentNonce, currentNonce + lockNonces)`.
 - `unwrap(amount, start, target)` -- burns both legs, returns exactly `amount` (anytime).
-- `unwrapYield(amount, start, target)` -- burns yield leg, returns `amount * coupon` (gated: `yieldNonce() >= target`).
-- `unwrapCapital(amount, start, target)` -- burns capital leg, returns `amount * (1 - coupon)` (gated: `yieldNonce() >= target`).
+- `unwrapYield(amount, start, target)` -- burns yield leg, returns `amount * coupon` (gated: `getClassNonce(UIScalingClass.Yield) >= target`).
+- `unwrapCapital(amount, start, target)` -- burns capital leg, returns `amount * (1 - coupon)` (gated: `getClassNonce(UIScalingClass.Yield) >= target`).
 
 Where `coupon = max(1 - Y_start / Y_target, 0)` in 1e18 fixed point, frozen at historical checkpoints only.
 

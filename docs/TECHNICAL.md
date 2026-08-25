@@ -19,13 +19,13 @@ keeps every EIP-8056 function untouched and adds:
 - **Per-class cumulative factors.** `uiScalingFactor(class)` and
   `uiScalingFactorAt(class, ts)` read a class factor; the composite
   `uiMultiplier() = Supply × Yield × Other` (canonical `composeUiMultiplier`).
-- **Scheduled (pending) updates per class.** `setUIScalingFactor(class, factor,
-  ts)` schedules an absolute factor; `applyUIScalingDelta(class, delta, ts)`
+- **Scheduled (pending) updates per class.** `setUIMultiplier(class, factor,
+  ts)` schedules an absolute factor; `applyUIMultiplierDelta(class, delta, ts)`
   applies a relative `new = current × delta / 1e18`. Nothing activates before
   `effectiveAt` — a pending update does not move today's multiplier.
 - **A checkpoint history per class.** `scalingCheckpointAt`, `scalingHistoryLength`. Each checkpoint is `{effectiveAt, cumulativeFactor}`. Once a checkpoint becomes effective it is permanent; a scheduled-but-not-yet-effective (pending) checkpoint is replaced if rescheduled, so only *landed* events are frozen.
-- **A yield-event log and nonce.** `yieldNonce()` counts effective Yield
-  updates; `yieldEventAt(nonce)` returns `{timestamp, multiplier}`. This is the
+- **A yield-event log and nonce.** `getClassNonce(UIScalingClass.Yield)` counts effective Yield
+  updates; `classEventAtNonce(UIScalingClass.Yield, nonce)` returns `{timestamp, cumulativeFactor}`. This is the
   backbone of the Capital/Yield split.
 
 ### 1.2 What it solves
@@ -53,9 +53,9 @@ construction.
 
 ### 1.4 The nonce is derived, not stored
 
-`yieldNonce()` is *derived* from the Yield checkpoint history: it counts
+`getClassNonce(UIScalingClass.Yield)` is *derived* from the Yield checkpoint history: it counts
 checkpoints with `effectiveAt <= now`, skipping the genesis checkpoint (index 0)
-and any pending (future) updates. `yieldEventAt(nonce)` maps nonce `n` to
+and any pending (future) updates. `classEventAtNonce(UIScalingClass.Yield, nonce)` maps nonce `n` to
 checkpoint index `n` (`1`-based events; genesis is not an event). This means:
 
 - No *additional* storage for the event log — the nonce and events are read
@@ -74,7 +74,7 @@ ERC-20-interoperable use.
 Two equally valid integration paths:
 
 1. **Standalone wrapper (this repo).** `ERC8056PairWrapper` holds raw RWA and
-   mints `CapitalToken` / `YieldToken` pairs against the extension's yield
+   mints `LegToken` / `LegToken` pairs against the extension's yield
    history. Clean separation, keeps the base token minimal, and lets *any*
    EIP-8056-compatible issuer opt in without changing their token.
 2. **In-ERC integration.** The wrapping could be folded directly into the
@@ -118,7 +118,7 @@ next N multiplier updates, whenever they land."*
 
 - `wrap(raw, lockNonces)` at current nonce `N` creates/joins pair
   `(start, target) = (N, N + lockNonces)`.
-- The position matures when `yieldNonce() >= targetNonce` — i.e. when the
+- The position matures when `getClassNonce(UIScalingClass.Yield) >= targetNonce` — i.e. when the
   target **event** actually happens, not when a clock crosses a date.
 
 ### 2.3 The core: event-based expiry
@@ -127,8 +127,8 @@ The yield claim is priced **frozen at the target nonce**, from historical
 checkpoints only:
 
 ```
-Y_s = yieldEventAt(start).multiplier     # multiplier when the window opened
-Y_t = yieldEventAt(target).multiplier    # multiplier when the window matured
+Y_s = classEventAtNonce(UIScalingClass.Yield, start).cumulativeFactor     # multiplier when the window opened
+Y_t = classEventAtNonce(UIScalingClass.Yield, target).cumulativeFactor    # multiplier when the window matured
 
 coupon = max(1 - Y_s / Y_t, 0)           # yield leg pays this fraction
 share  = 1 - coupon                      # capital leg pays the rest
@@ -148,13 +148,13 @@ Key properties:
   claim. This is exactly the "expiry fires before the multiplier updates"
   failure mode, resolved.
 - **Frozen and final.** Effective checkpoints are permanent, so
-  `yieldEventAt(target)` stays readable forever and the payout is deterministic.
+  `classEventAtNonce(UIScalingClass.Yield, target)` stays readable forever and the payout is deterministic.
 
 ### 2.4 The CA-push / nonce system
 
 Because yield arrives as discrete events, the contract must learn *when* an
 event lands. That is the **central authority (CA) push** — the issuer (or a
-designated keeper) calls `applyUIScalingDelta(UIScalingClass.Yield, delta, ts)`
+designated keeper) calls `applyUIMultiplierDelta(UIScalingClass.Yield, delta, ts)`
 when a dividend is distributed. The nonce ticks when that pushed update becomes
 **effective** (its `effectiveAt` is reached), not at the moment of the call.
 This is the trusted source of truth for "a yield event happened," just as the
@@ -181,8 +181,8 @@ The estimate is as good as the issuer's dividend cadence — and it can never
 | Path | When | Payout |
 |------|------|--------|
 | `unwrap` (both legs) | anytime | exactly `amount` |
-| `unwrapYield` | `yieldNonce() >= target` | `amount × coupon` |
-| `unwrapCapital` | `yieldNonce() >= target` | `amount × (1 - coupon)` |
+| `unwrapYield` | `getClassNonce(UIScalingClass.Yield) >= target` | `amount × coupon` |
+| `unwrapCapital` | `getClassNonce(UIScalingClass.Yield) >= target` | `amount × (1 - coupon)` |
 
 Because `coupon + share = 1`, every pair's total claim equals its deposit, so a
 **single shared raw vault stays solvent by construction**: total claims never
@@ -194,13 +194,13 @@ exceed `rawLocked`.
 
 With a precise, event-accurate Capital/Yield split, protocols can treat RWA like
 any composable ERC-20 pair. The wrapper mints two fungible, transferable,
-ERC-20 tokens per window — `CapitalToken` and `YieldToken` — that protocols can
+ERC-20 tokens per window — `LegToken` and `LegToken` — that protocols can
 plug into existing rails.
 
 ### 3.1 Lending
 
-- **Lend the principal, keep the yield.** A lender deposits `CapitalToken`
-  (claims principal) and accrues/sells `YieldToken` as the interest leg.
+- **Lend the principal, keep the yield.** A lender deposits `LegToken`
+  (claims principal) and accrues/sells `LegToken` as the interest leg.
 - The stable, principal-protected nature of the capital leg (`share = 1 - coupon`,
   floor at 1x when `Y_t <= Y_s`) makes it a conservative lending collateral.
 - The yield leg is a clean "income asset" that can be transferred, priced, or
@@ -209,7 +209,7 @@ plug into existing rails.
 ### 3.2 Options
 
 - **Write the yield upside.** An option can be collateralized with the
-  `YieldToken` — the payoff is literally the window's accrued yield.
+  `LegToken` — the payoff is literally the window's accrued yield.
 - Because the yield coupon is **frozen and deterministic** once the target nonce
   is reached, options can be priced and settled against a known payoff, not a
   fluctuating current multiplier.
@@ -217,7 +217,7 @@ plug into existing rails.
 
 ### 3.3 Auctions
 
-- **Auction future distributions.** A window's `YieldToken` (the right to that
+- **Auction future distributions.** A window's `LegToken` (the right to that
   window's coupon) is a natural auction lot: "who pays for this window's
   yield?"
 - Windows are fungible within the same `(start, target)` nonce pair, so lots can

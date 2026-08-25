@@ -4,10 +4,10 @@ pragma solidity ^0.8.24;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {IERC8056} from "./extensions/interfaces/IERC8056.sol";
-import {IERC8056Conversion} from "./extensions/interfaces/IERC8056Conversion.sol";
-import {IERC8056Balances} from "./extensions/interfaces/IERC8056Balances.sol";
-import {IERC8056NewUIMultiplier} from "./extensions/interfaces/IERC8056NewUIMultiplier.sol";
+import {IERC8056} from "./interfaces/IERC8056.sol";
+import {IERC8056Conversion} from "./interfaces/IERC8056Conversion.sol";
+import {IERC8056Balances} from "./interfaces/IERC8056Balances.sol";
+import {IERC8056NewUIMultiplier} from "./interfaces/IERC8056NewUIMultiplier.sol";
 
 /**
  * @title ERC8056

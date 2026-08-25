@@ -119,7 +119,7 @@ contract ERC8056PairWrapperHandler is Test {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Yield, delta, block.timestamp + delay, "", "", "");
+        underlying.applyUIMultiplierDelta(UIScalingClass.Yield, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
@@ -127,7 +127,7 @@ contract ERC8056PairWrapperHandler is Test {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Supply, delta, block.timestamp + delay, "", "", "");
+        underlying.applyUIMultiplierDelta(UIScalingClass.Supply, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 
@@ -135,7 +135,7 @@ contract ERC8056PairWrapperHandler is Test {
         uint256 delta = bound(deltaSeed, 5e17, 2e18);
         uint256 delay = bound(delaySeed, 1, 3 days);
         vm.prank(owner);
-        underlying.applyUIScalingDelta(UIScalingClass.Other, delta, block.timestamp + delay, "", "", "");
+        underlying.applyUIMultiplierDelta(UIScalingClass.Other, delta, block.timestamp + delay, "", "", "");
         vm.warp(block.timestamp + delay);
     }
 }

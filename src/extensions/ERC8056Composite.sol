@@ -5,13 +5,14 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IERC8056} from "./interfaces/IERC8056.sol";
-import {IERC8056Conversion} from "./interfaces/IERC8056Conversion.sol";
-import {IERC8056Balances} from "./interfaces/IERC8056Balances.sol";
-import {IERC8056NewUIMultiplier} from "./interfaces/IERC8056NewUIMultiplier.sol";
+import {IERC8056} from "../interfaces/IERC8056.sol";
+import {IERC8056Conversion} from "../interfaces/IERC8056Conversion.sol";
+import {IERC8056Balances} from "../interfaces/IERC8056Balances.sol";
+import {IERC8056NewUIMultiplier} from "../interfaces/IERC8056NewUIMultiplier.sol";
 import {IERC8056Composite} from "./interfaces/IERC8056Composite.sol";
 import {UIScalingClass} from "./interfaces/UIScalingClass.sol";
 import {UIScalingMath} from "../libraries/UIScalingMath.sol";
+import {Arrays} from "@openzeppelin/contracts/utils/Arrays.sol";
 
 /**
  * @title ERC8056Composite
@@ -38,7 +39,7 @@ contract ERC8056Composite is
 
     mapping(UIScalingClass => ClassScalingState) private _classScaling;
     mapping(UIScalingClass => ScalingCheckpoint[]) private _checkpoints;
-    mapping(UIScalingClass => uint256) private _classNonces;
+    mapping(UIScalingClass => uint256[]) private _checkpointTimestamps;
 
     constructor(string memory name_, string memory symbol_, address initialOwner)
         ERC20(name_, symbol_)
@@ -52,6 +53,7 @@ contract ERC8056Composite is
                 effectiveAt: type(uint256).max
             });
             _checkpoints[scalingClass].push(ScalingCheckpoint(0, UIScalingMath.MULTIPLIER_DECIMALS));
+            _checkpointTimestamps[scalingClass].push(0);
         }
         emit UIMultiplierUpdated(0, UIScalingMath.MULTIPLIER_DECIMALS, block.timestamp);
     }
@@ -76,16 +78,16 @@ contract ERC8056Composite is
 
     function uiScalingFactorAt(UIScalingClass scalingClass, uint256 timestamp) public view override returns (uint256) {
         _validateScalingClass(scalingClass);
+        uint256[] storage timestamps = _checkpointTimestamps[scalingClass];
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
-        uint256 factor = UIScalingMath.MULTIPLIER_DECIMALS;
-        for (uint256 i = 0; i < history.length; i++) {
-            if (history[i].effectiveAt <= timestamp) {
-                factor = history[i].cumulativeFactor;
-            } else {
-                break;
-            }
+        // lowerBound returns first index where effectiveAt >= timestamp
+        uint256 idx = Arrays.lowerBound(timestamps, timestamp);
+        // If idx points to exact match, use it; otherwise go back one
+        if (idx < history.length && timestamps[idx] == timestamp) {
+            return history[idx].cumulativeFactor;
         }
-        return factor;
+        // idx is first index > timestamp, so idx-1 is last index <= timestamp
+        return idx > 0 ? history[idx - 1].cumulativeFactor : UIScalingMath.MULTIPLIER_DECIMALS;
     }
 
     function uiMultiplierAt(uint256 timestamp) public view override returns (uint256) {
@@ -96,16 +98,20 @@ contract ERC8056Composite is
         );
     }
 
-    function pendingUIScalingFactor(UIScalingClass scalingClass) public view override returns (uint256) {
+    function uiMultiplierAt(UIScalingClass scalingClass, uint256 timestamp) external view override returns (uint256) {
+        return uiScalingFactorAt(scalingClass, timestamp);
+    }
+
+    function newUIMultiplier(UIScalingClass scalingClass) public view override returns (uint256) {
         return _classScaling[scalingClass].pendingFactor;
     }
 
-    function scalingFactorEffectiveAt(UIScalingClass scalingClass) public view override returns (uint256) {
-        if (!hasPendingScalingFactor(scalingClass)) return 0;
+    function effectiveAt(UIScalingClass scalingClass) public view override returns (uint256) {
+        if (!hasPendingUIMultiplier(scalingClass)) return 0;
         return _classScaling[scalingClass].effectiveAt;
     }
 
-    function hasPendingScalingFactor(UIScalingClass scalingClass) public view override returns (bool) {
+    function hasPendingUIMultiplier(UIScalingClass scalingClass) public view override returns (bool) {
         ClassScalingState storage state = _classScaling[scalingClass];
         return block.timestamp < state.effectiveAt && state.effectiveAt != type(uint256).max;
     }
@@ -123,12 +129,9 @@ contract ERC8056Composite is
         return _checkpoints[scalingClass][index];
     }
 
-    /// @dev Number of effective Yield events. Derived from the Yield checkpoint
-    ///      history: genesis (index 0) is not an event and pending updates
-    ///      (effectiveAt in the future) are excluded, so the nonce only ticks
-    ///      when a dividend actually lands.
-    function yieldNonce() public view override returns (uint256) {
-        ScalingCheckpoint[] storage history = _checkpoints[UIScalingClass.Yield];
+    function getClassNonce(UIScalingClass scalingClass) public view override returns (uint256) {
+        _validateScalingClass(scalingClass);
+        ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
         uint256 nonce;
         for (uint256 i = 1; i < history.length; i++) {
             if (history[i].effectiveAt <= block.timestamp) {
@@ -140,78 +143,85 @@ contract ERC8056Composite is
         return nonce;
     }
 
-    /// @dev Yield event with 1-based `nonce`: `{timestamp, multiplier}` of the
-    ///      nonce-th effective Yield update. Pending updates are not visible.
-    function yieldEventAt(uint256 nonce) external view override returns (YieldEvent memory) {
-        ScalingCheckpoint[] storage history = _checkpoints[UIScalingClass.Yield];
+    function classEventAtNonce(UIScalingClass scalingClass, uint256 nonce)
+        public
+        view
+        override
+        returns (ClassScalingEvent memory)
+    {
+        _validateScalingClass(scalingClass);
+        ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
         uint256 index = nonce; // genesis checkpoint occupies index 0; event nonce 1 is index 1
         if (index >= history.length) revert EventNotRecorded();
         if (history[index].effectiveAt > block.timestamp) revert EventNotEffective();
-        return YieldEvent(history[index].effectiveAt, history[index].cumulativeFactor);
+        return ClassScalingEvent(history[index].effectiveAt, history[index].cumulativeFactor);
     }
 
     //==============================================================================//
     // Class writes (enum required - no generic update)                             //
     //==============================================================================//
-    function setUIScalingFactor(
+    function setUIMultiplier(
         UIScalingClass scalingClass,
-        uint256 newFactor,
+        uint256 newMultiplier,
         uint256 effectiveAtTimestamp,
         string calldata id,
         string calldata description,
         string calldata uri
     ) public override onlyOwner {
-        _setScalingFactor(scalingClass, newFactor, effectiveAtTimestamp, id, description, uri);
+        _setMultiplier(scalingClass, newMultiplier, effectiveAtTimestamp, id, description, uri);
     }
 
-    function applyUIScalingDelta(
+    function applyUIMultiplierDelta(
         UIScalingClass scalingClass,
-        uint256 factorDelta,
+        uint256 multiplierDelta,
         uint256 effectiveAtTimestamp,
         string calldata id,
         string calldata description,
         string calldata uri
     ) external override onlyOwner {
-        require(factorDelta > 0, "ERC8056: delta must be positive");
-        uint256 currentFactor = _currentFactorForDelta(scalingClass);
-        uint256 newFactor = Math.mulDiv(currentFactor, factorDelta, UIScalingMath.MULTIPLIER_DECIMALS);
-        _setScalingFactor(scalingClass, newFactor, effectiveAtTimestamp, id, description, uri);
+        require(multiplierDelta > 0, "ERC8056: delta must be positive");
+        uint256 currentFactor = _currentMultiplierForDelta(scalingClass);
+        uint256 newMultiplier = Math.mulDiv(currentFactor, multiplierDelta, UIScalingMath.MULTIPLIER_DECIMALS);
+        _setMultiplier(scalingClass, newMultiplier, effectiveAtTimestamp, id, description, uri);
     }
 
-    function _setScalingFactor(
+    function _setMultiplier(
         UIScalingClass scalingClass,
-        uint256 newFactor,
+        uint256 newMultiplier,
         uint256 effectiveAtTimestamp,
         string calldata id,
         string calldata description,
         string calldata uri
     ) internal {
         _validateScalingClass(scalingClass);
-        require(newFactor > 0, "ERC8056: factor must be positive");
+        require(newMultiplier > 0, "ERC8056: factor must be positive");
         require(effectiveAtTimestamp > block.timestamp, "ERC8056: effective time must be future");
 
         ClassScalingState storage state = _classScaling[scalingClass];
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
 
         uint256 oldComposite = uiMultiplier();
-        uint256 oldFactor = uiScalingFactor(scalingClass);
+        uint256 oldMultiplier = uiScalingFactor(scalingClass);
 
-        if (hasPendingScalingFactor(scalingClass)) {
+        if (hasPendingUIMultiplier(scalingClass)) {
             history.pop();
+            _checkpointTimestamps[scalingClass].pop();
         } else if (block.timestamp >= state.effectiveAt) {
             state.activeFactor = state.pendingFactor;
         }
 
-        state.pendingFactor = newFactor;
+        state.pendingFactor = newMultiplier;
         state.effectiveAt = effectiveAtTimestamp;
-        history.push(ScalingCheckpoint(effectiveAtTimestamp, newFactor));
+        history.push(ScalingCheckpoint(effectiveAtTimestamp, newMultiplier));
+        _checkpointTimestamps[scalingClass].push(effectiveAtTimestamp);
 
-        uint256 delta = oldFactor == 0 ? newFactor : newFactor * UIScalingMath.MULTIPLIER_DECIMALS / oldFactor;
-        uint256 nonce = ++_classNonces[scalingClass];
+        uint256 delta =
+            oldMultiplier == 0 ? newMultiplier : newMultiplier * UIScalingMath.MULTIPLIER_DECIMALS / oldMultiplier;
+        uint256 nonce = getClassNonce(scalingClass);
 
         emit UIScalingFactorUpdated(
             scalingClass,
-            newFactor,
+            newMultiplier,
             delta,
             effectiveAtTimestamp,
             nonce,
@@ -227,6 +237,22 @@ contract ERC8056Composite is
         return uiMultiplierAt(block.timestamp);
     }
 
+    function uiMultiplier(UIScalingClass scalingClass) external view override returns (uint256) {
+        return uiScalingFactor(scalingClass);
+    }
+
+    function uiMultiplierAtNonce(uint256 nonce) external view override returns (uint256) {
+        return UIScalingMath.composeUiMultiplier(
+            uiMultiplierAtNonce(UIScalingClass.Supply, nonce),
+            uiMultiplierAtNonce(UIScalingClass.Yield, nonce),
+            uiMultiplierAtNonce(UIScalingClass.Other, nonce)
+        );
+    }
+
+    function uiMultiplierAtNonce(UIScalingClass scalingClass, uint256 nonce) public view override returns (uint256) {
+        return classEventAtNonce(scalingClass, nonce).cumulativeFactor;
+    }
+
     function newUIMultiplier() public view override returns (uint256) {
         return _compositeFromPending();
     }
@@ -236,7 +262,7 @@ contract ERC8056Composite is
         bool found;
         for (uint256 i = 0; i < UIScalingMath.SCALING_CLASS_COUNT; i++) {
             UIScalingClass scalingClass = UIScalingClass(i);
-            if (hasPendingScalingFactor(scalingClass)) {
+            if (hasPendingUIMultiplier(scalingClass)) {
                 uint256 ts = _classScaling[scalingClass].effectiveAt;
                 if (ts < earliest) {
                     earliest = ts;
@@ -307,9 +333,9 @@ contract ERC8056Composite is
         return state.pendingFactor;
     }
 
-    function _currentFactorForDelta(UIScalingClass scalingClass) internal view returns (uint256) {
-        if (hasPendingScalingFactor(scalingClass)) {
-            return pendingUIScalingFactor(scalingClass);
+    function _currentMultiplierForDelta(UIScalingClass scalingClass) internal view returns (uint256) {
+        if (hasPendingUIMultiplier(scalingClass)) {
+            return newUIMultiplier(scalingClass);
         }
         return uiScalingFactor(scalingClass);
     }

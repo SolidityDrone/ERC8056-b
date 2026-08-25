@@ -24,7 +24,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
     {
         effectiveAt = block.timestamp + delay;
         vm.prank(owner);
-        token.applyUIScalingDelta(scalingClass, factorDelta, effectiveAt, "", "", "");
+        token.applyUIMultiplierDelta(scalingClass, factorDelta, effectiveAt, "", "", "");
     }
 
     function _warpToEffective(uint256 effectiveAt) internal {
@@ -92,14 +92,14 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
         ERC8056Composite pathA = new ERC8056Composite("A", "A", owner);
         vm.startPrank(owner);
-        pathA.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, effectiveAt, "", "", "");
-        pathA.applyUIScalingDelta(UIScalingClass.Supply, DOUBLE, effectiveAt, "", "", "");
+        pathA.applyUIMultiplierDelta(UIScalingClass.Yield, DOUBLE, effectiveAt, "", "", "");
+        pathA.applyUIMultiplierDelta(UIScalingClass.Supply, DOUBLE, effectiveAt, "", "", "");
         vm.stopPrank();
 
         ERC8056Composite pathB = new ERC8056Composite("B", "B", owner);
         vm.startPrank(owner);
-        pathB.applyUIScalingDelta(UIScalingClass.Supply, DOUBLE, effectiveAt, "", "", "");
-        pathB.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, effectiveAt, "", "", "");
+        pathB.applyUIMultiplierDelta(UIScalingClass.Supply, DOUBLE, effectiveAt, "", "", "");
+        pathB.applyUIMultiplierDelta(UIScalingClass.Yield, DOUBLE, effectiveAt, "", "", "");
         vm.stopPrank();
 
         _warpToEffective(effectiveAt);
@@ -268,9 +268,9 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
     function test_other_doesNotTickYieldNonce() public {
         vm.prank(owner);
-        token.setUIScalingFactor(UIScalingClass.Other, DOUBLE, block.timestamp + 1 days, "", "", "");
+        token.setUIMultiplier(UIScalingClass.Other, DOUBLE, block.timestamp + 1 days, "", "", "");
         vm.warp(block.timestamp + 1 days);
-        assertEq(token.yieldNonce(), 0);
+        assertEq(token.getClassNonce(UIScalingClass.Yield), 0);
     }
 
     //==============================================================================//
@@ -315,17 +315,17 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
         if (yieldFirst) {
             vm.prank(owner);
-            local.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 hours, "", "", "");
+            local.applyUIMultiplierDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 hours, "", "", "");
             _warpToEffective(block.timestamp + 1 hours);
             vm.prank(owner);
-            local.applyUIScalingDelta(UIScalingClass.Supply, DOUBLE, block.timestamp + 1 hours, "", "", "");
+            local.applyUIMultiplierDelta(UIScalingClass.Supply, DOUBLE, block.timestamp + 1 hours, "", "", "");
             _warpToEffective(block.timestamp + 1 hours);
         } else {
             vm.prank(owner);
-            local.applyUIScalingDelta(UIScalingClass.Supply, DOUBLE, block.timestamp + 1 hours, "", "", "");
+            local.applyUIMultiplierDelta(UIScalingClass.Supply, DOUBLE, block.timestamp + 1 hours, "", "", "");
             _warpToEffective(block.timestamp + 1 hours);
             vm.prank(owner);
-            local.applyUIScalingDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 hours, "", "", "");
+            local.applyUIMultiplierDelta(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 hours, "", "", "");
             _warpToEffective(block.timestamp + 1 hours);
         }
 
@@ -360,7 +360,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
         _warpToEffective(stakeTime + 90 days);
         vm.prank(owner);
-        local.applyUIScalingDelta(UIScalingClass.Yield, 1.5e18, block.timestamp + 1 hours, "", "", "");
+        local.applyUIMultiplierDelta(UIScalingClass.Yield, 1.5e18, block.timestamp + 1 hours, "", "", "");
         _warpToEffective(block.timestamp + 1 hours);
 
         assertEq(local.uiScalingFactorAt(UIScalingClass.Yield, stakeTime), NEUTRAL);
@@ -426,7 +426,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
         for (uint256 i = 0; i < actions.length; i++) {
             _warpToEffective(start + actions[i].dayOffset * 1 days);
             vm.prank(owner);
-            local.applyUIScalingDelta(
+            local.applyUIMultiplierDelta(
                 actions[i].scalingClass, actions[i].factorDelta, block.timestamp + 1 hours, "", "", ""
             );
             _warpToEffective(block.timestamp + 1 hours);
@@ -444,8 +444,8 @@ contract ERC8056CompositeTest is ScalingTestBase {
     //==============================================================================//
     function test_schedule_pendingVisibleBeforeEffective() public {
         uint256 effectiveAt = _scheduleScalingDelta(UIScalingClass.Yield, DOUBLE, 1 days);
-        assertTrue(token.hasPendingScalingFactor(UIScalingClass.Yield));
-        assertEq(token.pendingUIScalingFactor(UIScalingClass.Yield), DOUBLE);
+        assertTrue(token.hasPendingUIMultiplier(UIScalingClass.Yield));
+        assertEq(token.newUIMultiplier(UIScalingClass.Yield), DOUBLE);
         assertEq(token.uiScalingFactor(UIScalingClass.Yield), NEUTRAL);
         assertEq(token.newUIMultiplier(), DOUBLE);
         assertEq(token.effectiveAt(), effectiveAt);
@@ -458,7 +458,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
             DOUBLE,
             DOUBLE,
             block.timestamp + 1 hours,
-            1,
+            0, // nonce 0: not yet effective
             IERC8056Composite.Announcement({id: "", description: "", uri: ""})
         );
         _scheduleScalingDelta(UIScalingClass.Yield, DOUBLE, 1 hours);
@@ -467,80 +467,155 @@ contract ERC8056CompositeTest is ScalingTestBase {
     function test_revert_zeroDelta() public {
         vm.prank(owner);
         vm.expectRevert("ERC8056: delta must be positive");
-        token.applyUIScalingDelta(UIScalingClass.Yield, 0, block.timestamp + 1, "", "", "");
+        token.applyUIMultiplierDelta(UIScalingClass.Yield, 0, block.timestamp + 1, "", "", "");
     }
 
     function test_revert_effectiveAtNotFuture() public {
         vm.prank(owner);
         vm.expectRevert("ERC8056: effective time must be future");
-        token.setUIScalingFactor(UIScalingClass.Yield, DOUBLE, block.timestamp, "", "", "");
+        token.setUIMultiplier(UIScalingClass.Yield, DOUBLE, block.timestamp, "", "", "");
     }
 
     //==============================================================================//
     // Yield nonce (event-based expiry)                                             //
     //==============================================================================//
-    function test_yieldNonce_zeroInitially() public view {
-        assertEq(token.yieldNonce(), 0);
+    function test_getClassNonce_zeroInitially() public view {
+        assertEq(token.getClassNonce(UIScalingClass.Yield), 0);
     }
 
-    function test_yieldNonce_ticksOnlyWhenEffective() public {
+    function test_getClassNonce_ticksOnlyWhenEffective() public {
         vm.prank(owner);
-        token.setUIScalingFactor(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
-        assertEq(token.yieldNonce(), 0); // pending: not counted
+        token.setUIMultiplier(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
+        assertEq(token.getClassNonce(UIScalingClass.Yield), 0); // pending: not counted
         vm.warp(block.timestamp + 1 days);
-        assertEq(token.yieldNonce(), 1);
+        assertEq(token.getClassNonce(UIScalingClass.Yield), 1);
     }
 
-    function test_yieldNonce_supplyUpdatesDoNotTick() public {
+    function test_getClassNonce_supplyUpdatesDoNotTick() public {
         vm.prank(owner);
-        token.setUIScalingFactor(UIScalingClass.Supply, DOUBLE, block.timestamp + 1 days, "", "", "");
+        token.setUIMultiplier(UIScalingClass.Supply, DOUBLE, block.timestamp + 1 days, "", "", "");
         vm.warp(block.timestamp + 1 days);
-        assertEq(token.yieldNonce(), 0);
+        assertEq(token.getClassNonce(UIScalingClass.Yield), 0);
     }
 
-    function test_yieldNonce_countsEffectiveEvents() public {
+    function test_getClassNonce_countsEffectiveEvents() public {
         vm.prank(owner);
-        token.setUIScalingFactor(UIScalingClass.Yield, 11e17, block.timestamp + 1 days, "", "", "");
+        token.setUIMultiplier(UIScalingClass.Yield, 11e17, block.timestamp + 1 days, "", "", "");
         vm.warp(block.timestamp + 1 days); // nonce 1
         vm.prank(owner);
-        token.setUIScalingFactor(UIScalingClass.Yield, 12e17, block.timestamp + 2 days, "", "", "");
+        token.setUIMultiplier(UIScalingClass.Yield, 12e17, block.timestamp + 2 days, "", "", "");
         vm.warp(block.timestamp + 1 days); // second update still pending
-        assertEq(token.yieldNonce(), 1);
+        assertEq(token.getClassNonce(UIScalingClass.Yield), 1);
         vm.warp(block.timestamp + 1 days);
-        assertEq(token.yieldNonce(), 2);
+        assertEq(token.getClassNonce(UIScalingClass.Yield), 2);
     }
 
-    function test_yieldNonce_reschedule_keepsSingleEvent() public {
+    function test_getClassNonce_reschedule_keepsSingleEvent() public {
         vm.prank(owner);
-        token.setUIScalingFactor(UIScalingClass.Yield, 15e17, block.timestamp + 2 days, "", "", "");
+        token.setUIMultiplier(UIScalingClass.Yield, 15e17, block.timestamp + 2 days, "", "", "");
         vm.prank(owner);
-        token.setUIScalingFactor(UIScalingClass.Yield, 15e17, block.timestamp + 4 days, "", "", ""); // delayed: pending popped + re-pushed
+        token.setUIMultiplier(UIScalingClass.Yield, 15e17, block.timestamp + 4 days, "", "", ""); // delayed: pending popped + re-pushed
         vm.warp(block.timestamp + 2 days); // old date passes
-        assertEq(token.yieldNonce(), 0);
+        assertEq(token.getClassNonce(UIScalingClass.Yield), 0);
         vm.warp(block.timestamp + 2 days); // new date
-        assertEq(token.yieldNonce(), 1);
+        assertEq(token.getClassNonce(UIScalingClass.Yield), 1);
     }
 
-    function test_yieldEventAt_returnsTimestampAndMultiplier() public {
+    function test_classEventAtNonce_returnsTimestampAndMultiplier() public {
         uint256 t1 = block.timestamp + 1 days;
         vm.prank(owner);
-        token.setUIScalingFactor(UIScalingClass.Yield, 15e17, t1, "", "", "");
+        token.setUIMultiplier(UIScalingClass.Yield, 15e17, t1, "", "", "");
         vm.warp(t1);
 
-        IERC8056Composite.YieldEvent memory ev = token.yieldEventAt(1);
+        IERC8056Composite.ClassScalingEvent memory ev = token.classEventAtNonce(UIScalingClass.Yield, 1);
         assertEq(ev.timestamp, t1);
-        assertEq(ev.multiplier, 15e17);
+        assertEq(ev.cumulativeFactor, 15e17);
     }
 
-    function test_yieldEventAt_notRecorded_reverts() public {
+    function test_classEventAtNonce_notRecorded_reverts() public {
         vm.expectRevert(ERC8056Composite.EventNotRecorded.selector);
-        token.yieldEventAt(1);
+        token.classEventAtNonce(UIScalingClass.Yield, 1);
     }
 
-    function test_yieldEventAt_pendingNotVisible_reverts() public {
+    function _scheduleScalingFactor(UIScalingClass clazz, uint256 factor, uint256 effectiveAt) internal {
         vm.prank(owner);
-        token.setUIScalingFactor(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
+        token.setUIMultiplier(clazz, factor, effectiveAt, "", "", "");
+    }
+
+    //==============================================================================//
+    // Binary search correctness                                                    //
+    //==============================================================================//
+    function test_binarySearch_beforeFirstCheckpoint() public view {
+        assertEq(token.uiScalingFactorAt(UIScalingClass.Yield, 0), NEUTRAL);
+    }
+
+    function test_binarySearch_betweenCheckpoints() public {
+        uint256 t1 = _scheduleScalingDelta(UIScalingClass.Yield, 1.5e18, 1 hours);
+        vm.warp(t1); // make first effective
+        uint256 t2 = _scheduleScalingDelta(UIScalingClass.Yield, 2e18, 2 hours);
+
+        assertEq(token.uiScalingFactorAt(UIScalingClass.Yield, t1 - 1), NEUTRAL);
+        assertEq(token.uiScalingFactorAt(UIScalingClass.Yield, t1), 1.5e18);
+        assertEq(token.uiScalingFactorAt(UIScalingClass.Yield, t2 - 1), 1.5e18);
+        assertEq(token.uiScalingFactorAt(UIScalingClass.Yield, t2), 3e18);
+    }
+
+    function test_binarySearch_exactTimestamp() public {
+        uint256 t1 = block.timestamp + 1 hours;
+        _scheduleScalingFactor(UIScalingClass.Supply, DOUBLE, t1);
+
+        assertEq(token.uiScalingFactorAt(UIScalingClass.Supply, t1), DOUBLE);
+        assertEq(token.uiScalingFactorAt(UIScalingClass.Supply, t1 - 1), NEUTRAL);
+    }
+
+    function test_binarySearch_multipleClasses() public {
+        _scheduleScalingFactor(UIScalingClass.Supply, DOUBLE, block.timestamp + 1 hours);
+        _scheduleScalingFactor(UIScalingClass.Yield, 1.5e18, block.timestamp + 2 hours);
+        _scheduleScalingFactor(UIScalingClass.Other, 3e18, block.timestamp + 3 hours);
+
+        uint256 ts = block.timestamp + 4 hours;
+        assertEq(token.uiMultiplierAt(UIScalingClass.Supply, ts), DOUBLE);
+        assertEq(token.uiMultiplierAt(UIScalingClass.Yield, ts), 1.5e18);
+        assertEq(token.uiMultiplierAt(UIScalingClass.Other, ts), 3e18);
+        assertEq(token.uiMultiplierAt(ts), DOUBLE * 1.5e18 / 1e18 * 3e18 / 1e18);
+    }
+
+    function test_getClassNonce_allClasses() public {
+        assertEq(token.getClassNonce(UIScalingClass.Supply), 0);
+        assertEq(token.getClassNonce(UIScalingClass.Yield), 0);
+        assertEq(token.getClassNonce(UIScalingClass.Other), 0);
+
+        _scheduleScalingFactor(UIScalingClass.Supply, DOUBLE, block.timestamp + 1 hours);
+        _scheduleScalingFactor(UIScalingClass.Yield, 1.5e18, block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 2 hours);
+
+        assertEq(token.getClassNonce(UIScalingClass.Supply), 1);
+        assertEq(token.getClassNonce(UIScalingClass.Yield), 1);
+        assertEq(token.getClassNonce(UIScalingClass.Other), 0);
+    }
+
+    function test_classEventAtNonce_supply() public {
+        uint256 t1 = block.timestamp + 1 hours;
+        _scheduleScalingFactor(UIScalingClass.Supply, DOUBLE, t1);
+        vm.warp(t1 + 1);
+
+        IERC8056Composite.ClassScalingEvent memory ev = token.classEventAtNonce(UIScalingClass.Supply, 1);
+        assertEq(ev.timestamp, t1);
+        assertEq(ev.cumulativeFactor, DOUBLE);
+    }
+
+    function test_uiMultiplierAtNonce_composite() public {
+        uint256 t1 = block.timestamp + 1 hours;
+        _scheduleScalingFactor(UIScalingClass.Supply, DOUBLE, t1);
+        vm.warp(t1 + 1);
+
+        assertEq(token.uiMultiplierAtNonce(UIScalingClass.Supply, 1), DOUBLE);
+    }
+
+    function test_classEventAtNonce_pendingNotVisible_reverts() public {
+        vm.prank(owner);
+        token.setUIMultiplier(UIScalingClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
         vm.expectRevert(ERC8056Composite.EventNotEffective.selector);
-        token.yieldEventAt(1);
+        token.classEventAtNonce(UIScalingClass.Yield, 1);
     }
 }

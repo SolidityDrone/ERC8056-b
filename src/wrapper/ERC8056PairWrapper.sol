@@ -20,7 +20,7 @@ import {LegToken} from "./LegToken.sol";
  *   `raw` Capital + `raw` Yield of that window (1:1 raw).
  *
  *   Claims are FROZEN at the target nonce, from historical checkpoints only:
- *     Y_s = yieldEventAt(start).multiplier   Y_t = yieldEventAt(target).multiplier
+ *     Y_s = classEventAtNonce(UIScalingClass.Yield, start).cumulativeFactor   Y_t = classEventAtNonce(UIScalingClass.Yield, target).cumulativeFactor
  *     yield coupon per token = max(1 - Y_s/Y_t, 0)   (0 when Y_t <= Y_s: principal protected)
  *     capital share per token = 1 - coupon
  *   The current multiplier is NEVER read; later dividends price nothing for a
@@ -28,8 +28,8 @@ import {LegToken} from "./LegToken.sol";
  *
  *   Redemption rules:
  *     - unwrap(amount, s, t)       - burn both legs, receive exactly `amount`, ANYTIME.
- *     - unwrapYield(amount, s, t)  - solo yield leg, only when yieldNonce() >= t.
- *     - unwrapCapital(amount, s, t)- solo capital leg, only when yieldNonce() >= t.
+ *     - unwrapYield(amount, s, t)  - solo yield leg, only when getClassNonce(UIScalingClass.Yield) >= t.
+ *     - unwrapCapital(amount, s, t)- solo capital leg, only when getClassNonce(UIScalingClass.Yield) >= t.
  *
  *  coupon + share = 1, so every pair's total claim equals its deposit and the
  *  shared vault stays solvent by construction.
@@ -74,7 +74,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
     function wrap(uint256 rawAmount, uint256 lockNonces) external returns (uint256 startNonce, uint256 targetNonce) {
         if (rawAmount == 0) revert InvalidAmount();
 
-        startNonce = scaledUnderlying.yieldNonce();
+        startNonce = scaledUnderlying.getClassNonce(UIScalingClass.Yield);
         targetNonce = startNonce + lockNonces;
 
         IERC8056PairWrapper.Pair storage pair = _pairs[startNonce][targetNonce];
@@ -119,11 +119,11 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
     // Unwrap (solo legs, nonce-gated, frozen payouts)
     // ------------------------------------------------------------------
     /// @notice Burn `amount` yield tokens of window (start, target) for `amount * coupon` raw.
-    /// @dev Only after `yieldNonce() >= targetNonce`; payout is frozen at the target multiplier.
+    /// @dev Only after `getClassNonce(UIScalingClass.Yield) >= targetNonce`; payout is frozen at the target multiplier.
     function unwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce) external {
         if (amount == 0) revert InvalidAmount();
         IERC8056PairWrapper.Pair storage pair = _requirePair(startNonce, targetNonce);
-        if (scaledUnderlying.yieldNonce() < targetNonce) revert Locked();
+        if (scaledUnderlying.getClassNonce(UIScalingClass.Yield) < targetNonce) revert Locked();
 
         uint256 coupon = _couponOf(startNonce, targetNonce);
         uint256 rawOut = Math.mulDiv(amount, coupon, UIScalingMath.MULTIPLIER_DECIMALS);
@@ -136,11 +136,11 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
     }
 
     /// @notice Burn `amount` capital tokens of window (start, target) for `amount * (1 - coupon)` raw.
-    /// @dev Only after `yieldNonce() >= targetNonce`; payout is frozen at the target multiplier.
+    /// @dev Only after `getClassNonce(UIScalingClass.Yield) >= targetNonce`; payout is frozen at the target multiplier.
     function unwrapCapital(uint256 amount, uint256 startNonce, uint256 targetNonce) external {
         if (amount == 0) revert InvalidAmount();
         IERC8056PairWrapper.Pair storage pair = _requirePair(startNonce, targetNonce);
-        if (scaledUnderlying.yieldNonce() < targetNonce) revert Locked();
+        if (scaledUnderlying.getClassNonce(UIScalingClass.Yield) < targetNonce) revert Locked();
 
         uint256 share = UIScalingMath.MULTIPLIER_DECIMALS - _couponOf(startNonce, targetNonce);
         uint256 rawOut = Math.mulDiv(amount, share, UIScalingMath.MULTIPLIER_DECIMALS);
@@ -157,7 +157,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
     // ------------------------------------------------------------------
     /// @dev Current yield nonce (effective dividend count) - delegated to the extension.
     function currentNonce() public view override returns (uint256) {
-        return scaledUnderlying.yieldNonce();
+        return scaledUnderlying.getClassNonce(UIScalingClass.Yield);
     }
 
     function pairCount() public view override returns (uint256) {
@@ -283,8 +283,8 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
     // Internals
     // ------------------------------------------------------------------
     function _couponOf(uint256 startNonce, uint256 targetNonce) internal view returns (uint256) {
-        uint256 yStart = scaledUnderlying.yieldEventAt(startNonce).multiplier;
-        uint256 yTarget = scaledUnderlying.yieldEventAt(targetNonce).multiplier;
+        uint256 yStart = scaledUnderlying.classEventAtNonce(UIScalingClass.Yield, startNonce).cumulativeFactor;
+        uint256 yTarget = scaledUnderlying.classEventAtNonce(UIScalingClass.Yield, targetNonce).cumulativeFactor;
         if (yTarget <= yStart) return 0;
         return Math.mulDiv(yTarget - yStart, UIScalingMath.MULTIPLIER_DECIMALS, yTarget);
     }
@@ -294,7 +294,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
         view
         returns (uint256 capitalRawOut, uint256 yieldLegRawOut)
     {
-        if (scaledUnderlying.yieldNonce() >= targetNonce) {
+        if (scaledUnderlying.getClassNonce(UIScalingClass.Yield) >= targetNonce) {
             uint256 share = UIScalingMath.MULTIPLIER_DECIMALS - _couponOf(startNonce, targetNonce);
             capitalRawOut = Math.mulDiv(amount, share, UIScalingMath.MULTIPLIER_DECIMALS);
             yieldLegRawOut = amount - capitalRawOut;

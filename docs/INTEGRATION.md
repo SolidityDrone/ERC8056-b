@@ -40,9 +40,9 @@ shared raw vault stays solvent by construction.
      │  wrap(rawAmount, lockNonces)
      ▼
   window (startNonce, targetNonce)
-     ├── CapitalToken  ──► unwrapCapital: raw * (1 - coupon)
-     └── YieldToken    ──► unwrapYield:   raw * coupon
-                           (both gated until yieldNonce >= targetNonce)
+     ├── LegToken  ──► unwrapCapital: raw * (1 - coupon)
+     └── LegToken    ──► unwrapYield:   raw * coupon
+                           (both gated until getClassNonce(UIScalingClass.Yield) >= targetNonce)
 ```
 
 ---
@@ -132,7 +132,7 @@ deterministic and independent of later events.
 
 | Member | Meaning |
 |--------|---------|
-| `currentNonce()` | current yield nonce (`== scaledUnderlying.yieldNonce()`) |
+| `currentNonce()` | current yield nonce (`== scaledUnderlying.getClassNonce(UIScalingClass.Yield)`) |
 | `couponOf(start,target)` | frozen yield coupon `max(1 - Y_start/Y_target, 0)`, 1e18 fixed point |
 | `capitalShareOf(start,target)` | `1e18 - coupon` |
 | `previewUnwrap(amount,start,target)` | `(capitalRawOut, yieldLegRawOut)` — splits exactly to `amount` |
@@ -152,9 +152,9 @@ deterministic and independent of later events.
 
 ### 4.1 Lending: borrow against a principal leg
 
-1. Borrowers `wrap(rawAmount, lockNonces)` to get a `CapitalToken` for
+1. Borrowers `wrap(rawAmount, lockNonces)` to get a `LegToken` for
    window `(s, t)`.
-2. The lending protocol takes the `CapitalToken` as collateral. It values it
+2. The lending protocol takes the `LegToken` as collateral. It values it
    via `capitalShareOf(s,t)` (or `previewUnwrapCapital`) rather than the live
    multiplier, so collateral is a *known* function of the window.
 3. On liquidation, the protocol `unwrapCapital(collateralAmount, s, t)` — but
@@ -163,8 +163,8 @@ deterministic and independent of later events.
 
 ### 4.2 Options: exercise value is frozen
 
-1. A call on window `(s, t)` is written against the `YieldToken` (upside) and
-   the `CapitalToken` (downside/floored principal).
+1. A call on window `(s, t)` is written against the `LegToken` (upside) and
+   the `LegToken` (downside/floored principal).
 2. Because `couponOf(s,t)` is frozen once `t` is reached, the option's
    settlement value is deterministic on-chain — there is no oracle race on the
    exercise payoff.
@@ -174,7 +174,7 @@ deterministic and independent of later events.
 ### 4.3 Auction: split-and-sell
 
 1. Issuer `wrap(rawAmount, lockNonces)` and reads `pairs(s,t)`.
-2. The `CapitalToken` and `YieldToken` are listed as separate lots with
+2. The `LegToken` and `LegToken` are listed as separate lots with
    independent order books — buyers can hold one leg without owning the other.
 3. `unwrap` (both legs) guarantees any holder of the full pair can always exit
    at exactly the deposit, so arbitrageurs keep the two legs near their fair

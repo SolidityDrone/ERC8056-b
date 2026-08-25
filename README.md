@@ -7,7 +7,7 @@ with nonce-based (event-based) expiration.
 
 - [`ERC8056`](src/ERC8056.sol) — the base EIP-8056 reference implementation (single composite multiplier).
 - [`ERC8056Composite`](src/extensions/ERC8056Composite.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and a per-class checkpoint history that also serves as the yield-event log.
-- [`ERC8056PairWrapper`](src/wrapper/ERC8056PairWrapper.sol) — a standalone wrapper (WETH-for-ETH-style, i.e. a separate adapter contract rather than folded into the base token) that splits raw RWA into per-window `CapitalToken` / `YieldToken` ERC-20 pairs with frozen-delta, nonce-gated redemption. Protocols integrate against the stable [`IERC8056PairWrapper`](src/wrapper/interfaces/IERC8056PairWrapper.sol) surface, discovered via the canonical [`ERC8056PairWrapperRegistry`](src/wrapper/ERC8056PairWrapperRegistry.sol) — see [INTEGRATION](docs/INTEGRATION.md).
+- [`ERC8056PairWrapper`](src/wrapper/ERC8056PairWrapper.sol) — a standalone wrapper (WETH-for-ETH-style, i.e. a separate adapter contract rather than folded into the base token) that splits raw RWA into per-window `LegToken` / `LegToken` ERC-20 pairs with frozen-delta, nonce-gated redemption. Protocols integrate against the stable [`IERC8056PairWrapper`](src/wrapper/interfaces/IERC8056PairWrapper.sol) surface, discovered via the canonical [`ERC8056PairWrapperRegistry`](src/wrapper/ERC8056PairWrapperRegistry.sol) — see [INTEGRATION](docs/INTEGRATION.md).
 
 ## Why this exists
 
@@ -72,13 +72,14 @@ forge script script/DeployERC8056Composite.s.sol --rpc-url <RPC> --broadcast
 ├── foundry.toml                    # build/test/invariant config (solc 0.8.24)
 ├── src/
 │   ├── ERC8056.sol                 # base EIP-8056 reference implementation
+│   ├── interfaces/                 # base ERC-8056 interfaces
+│   │   ├── IERC8056.sol            # core 8056 interface
+│   │   ├── IERC8056Conversion.sol  # toUIAmount/fromUIAmount
+│   │   ├── IERC8056Balances.sol    # balanceOfUI/totalSupplyUI
+│   │   └── IERC8056NewUIMultiplier.sol # newUIMultiplier/effectiveAt
 │   ├── extensions/
 │   │   ├── ERC8056Composite.sol    # class-decomposed extension
-│   │   └── interfaces/
-│   │       ├── IERC8056.sol            # core 8056 interface
-│   │       ├── IERC8056Conversion.sol  # toUIAmount/fromUIAmount
-│   │       ├── IERC8056Balances.sol    # balanceOfUI/totalSupplyUI
-│   │       ├── IERC8056NewUIMultiplier.sol # newUIMultiplier/effectiveAt
+│   │   └── interfaces/             # extension-only interfaces
 │   │       ├── IERC8056Composite.sol   # class extension interface
 │   │       └── UIScalingClass.sol      # enum { Supply, Yield, Other }
 │   ├── wrapper/
@@ -123,7 +124,7 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 
 | Interface | Methods |
 |-----------|---------|
-| `IERC8056Composite` | per-class `uiScalingFactor*`, `uiMultiplierAt`, pending/history views, `yieldNonce()`, `yieldEventAt(nonce)`, `setUIScalingFactor`, `applyUIScalingDelta` |
+| `IERC8056Composite` | per-class `uiScalingFactor*`, `uiMultiplierAt`, pending/history views, `getClassNonce(UIScalingClass.Yield)`, `classEventAtNonce(UIScalingClass.Yield, nonce)`, `setUIMultiplier`, `applyUIMultiplierDelta` |
 | `ERC8056Composite` | per-class `toUIAmount(raw, class)`, `toUIAmountAt`, `fromUIAmount` |
 | `UIScalingMath` | `composeUiMultiplier(Supply, Yield, Other)` |
 
@@ -141,8 +142,8 @@ See [INTEGRATION](docs/INTEGRATION.md) for the full consumer guide.
 | Action | Payoff | Gate |
 |--------|--------|------|
 | `unwrap` (both legs) | exactly `amount` | anytime |
-| `unwrapYield` | `amount * coupon` | `yieldNonce() >= target` |
-| `unwrapCapital` | `amount * (1 - coupon)` | `yieldNonce() >= target` |
+| `unwrapYield` | `amount * coupon` | `getClassNonce(UIScalingClass.Yield) >= target` |
+| `unwrapCapital` | `amount * (1 - coupon)` | `getClassNonce(UIScalingClass.Yield) >= target` |
 
 Where `coupon = max(1 - Y_start / Y_target, 0)` in 1e18 fixed point, frozen at
 the target nonce from historical checkpoints only. Because `coupon + share = 1`,

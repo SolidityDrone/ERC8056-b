@@ -16,9 +16,9 @@ interface IERC8056Composite {
         uint256 cumulativeFactor;
     }
 
-    struct YieldEvent {
+    struct ClassScalingEvent {
         uint256 timestamp;
-        uint256 multiplier;
+        uint256 cumulativeFactor;
     }
 
     struct Announcement {
@@ -29,30 +29,65 @@ interface IERC8056Composite {
 
     event UIScalingFactorUpdated(
         UIScalingClass indexed scalingClass,
-        uint256 newFactor,
-        uint256 factorDelta,
+        uint256 newMultiplier,
+        uint256 multiplierDelta,
         uint256 effectiveAtTimestamp,
         uint256 classNonce,
         Announcement announcement
     );
 
-    /// @dev Current cumulative factor for `scalingClass` (1e18 = 1.0x).
+    // ---- Per-class multiplier reads ----
+
+    /// @dev Current cumulative multiplier for `scalingClass` (1e18 = 1.0x).
     function uiScalingFactor(UIScalingClass scalingClass) external view returns (uint256);
 
-    /// @dev Cumulative factor for `scalingClass` as it was at `timestamp` (inclusive).
+    /// @dev Cumulative multiplier for `scalingClass` as it was at `timestamp` (inclusive).
+    ///      Uses binary search over checkpoint history.
     function uiScalingFactorAt(UIScalingClass scalingClass, uint256 timestamp) external view returns (uint256);
+
+    // ---- Base 8056 overloads (retro-compatible naming) ----
 
     /// @dev Composite multiplier at `timestamp` = product of all class factors at that time.
     function uiMultiplierAt(uint256 timestamp) external view returns (uint256);
 
-    /// @dev Pending cumulative factor scheduled for `scalingClass`.
-    function pendingUIScalingFactor(UIScalingClass scalingClass) external view returns (uint256);
+    /// @dev Cumulative multiplier for a single class at `timestamp`.
+    ///      Overload of uiScalingFactorAt with consistent naming.
+    function uiMultiplierAt(UIScalingClass scalingClass, uint256 timestamp) external view returns (uint256);
 
-    /// @dev When the pending factor for `scalingClass` becomes effective (0 if none).
-    function scalingFactorEffectiveAt(UIScalingClass scalingClass) external view returns (uint256);
+    /// @dev Current cumulative multiplier for a single class (alias for uiScalingFactor).
+    function uiMultiplier(UIScalingClass scalingClass) external view returns (uint256);
+
+    // ---- Nonce-based reads ----
+
+    /// @dev Composite multiplier at a past nonce = product of all class factors at that nonce.
+    ///      Nonce is 1-based (genesis is not an event).
+    function uiMultiplierAtNonce(uint256 nonce) external view returns (uint256);
+
+    /// @dev Cumulative multiplier for a single class at a past nonce.
+    ///      Nonce is 1-based (genesis is not an event).
+    function uiMultiplierAtNonce(UIScalingClass scalingClass, uint256 nonce) external view returns (uint256);
+
+    /// @dev Number of effective scaling events for `scalingClass` (stored counter).
+    ///      Genesis (index 0) is not counted; only effective checkpoints tick the nonce.
+    function getClassNonce(UIScalingClass scalingClass) external view returns (uint256);
+
+    /// @dev Scaling event for `scalingClass` at 1-based `nonce` (genesis is not an event).
+    ///      Returns `{timestamp, cumulativeMultiplier}`. Reverts if not recorded or not yet effective.
+    function classEventAtNonce(UIScalingClass scalingClass, uint256 nonce)
+        external
+        view
+        returns (ClassScalingEvent memory);
+
+    // ---- Pending / history views ----
+
+    /// @dev Pending cumulative multiplier scheduled for `scalingClass`.
+    function newUIMultiplier(UIScalingClass scalingClass) external view returns (uint256);
+
+    /// @dev When the pending multiplier for `scalingClass` becomes effective (0 if none).
+    function effectiveAt(UIScalingClass scalingClass) external view returns (uint256);
 
     /// @dev True when `scalingClass` has a scheduled update not yet active.
-    function hasPendingScalingFactor(UIScalingClass scalingClass) external view returns (bool);
+    function hasPendingUIMultiplier(UIScalingClass scalingClass) external view returns (bool);
 
     /// @dev Number of historical checkpoints recorded for `scalingClass` (includes genesis).
     function scalingHistoryLength(UIScalingClass scalingClass) external view returns (uint256);
@@ -63,32 +98,21 @@ interface IERC8056Composite {
         view
         returns (ScalingCheckpoint memory);
 
-    /// @dev Yield events that have become effective so far (the "nonce"). 0 before the first dividend.
-    function yieldNonce() external view returns (uint256);
+    // ---- State-changing: schedule updates ----
 
-    /// @dev Yield event with 1-based `nonce` (genesis is not an event).
-    ///      Reverts if the event is not recorded or not yet effective.
-    function yieldEventAt(uint256 nonce) external view returns (YieldEvent memory);
-
-    /**
-     * @dev Schedule an absolute cumulative factor for `scalingClass`.
-     *
-     * Supply example: 2-for-1 split sets factor from 1e18 to 2e18.
-     * Yield example: reinvestment sets factor from 1e18 to 1.05e18.
-     */
-    function setUIScalingFactor(
+    function setUIMultiplier(
         UIScalingClass scalingClass,
-        uint256 newFactor,
+        uint256 newMultiplier,
         uint256 effectiveAtTimestamp,
         string calldata id,
         string calldata description,
         string calldata uri
     ) external;
 
-    /// @dev Schedule a relative delta: `newFactor = current * factorDelta / 1e18`.
-    function applyUIScalingDelta(
+    /// @dev Schedule a relative delta: `newMultiplier = current * multiplierDelta / 1e18`.
+    function applyUIMultiplierDelta(
         UIScalingClass scalingClass,
-        uint256 factorDelta,
+        uint256 multiplierDelta,
         uint256 effectiveAtTimestamp,
         string calldata id,
         string calldata description,
