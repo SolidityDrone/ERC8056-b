@@ -116,15 +116,12 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
 
     function getClassNonce(MultiplierClass scalingClass) public view override returns (uint256) {
         _validateScalingClass(scalingClass);
-        ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
-        uint256 nonce;
-        for (uint256 i = 1; i < history.length; i++) {            if (history[i].effectiveAt <= block.timestamp) {
-                nonce++;
-            } else {
-                break;
-            }
-        }
-        return nonce;
+        uint256[] storage timestamps = _checkpointTimestamps[scalingClass];
+        if (timestamps.length == 0) return 0;
+        // Timestamps are strictly ascending (genesis at ts=0, pop-before-push,
+        // future-only scheduling), so the count of entries <= block.timestamp
+        // minus the genesis entry equals the effective-event nonce.
+        return Arrays.upperBound(timestamps, block.timestamp) - 1;
     }
 
     function classEventAtNonce(MultiplierClass scalingClass, uint256 nonce)
@@ -253,14 +250,23 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
 
     function uiMultiplierAtNonce(uint256 nonce) external view override returns (uint256) {
         return UIScalingMath.composeUiMultiplier(
-            uiMultiplierAtNonce(MultiplierClass.Supply, nonce),
-            uiMultiplierAtNonce(MultiplierClass.Yield, nonce),
-            uiMultiplierAtNonce(MultiplierClass.Other, nonce)
+            _clampedFactorAtNonce(MultiplierClass.Supply, nonce),
+            _clampedFactorAtNonce(MultiplierClass.Yield, nonce),
+            _clampedFactorAtNonce(MultiplierClass.Other, nonce)
         );
     }
 
     function uiMultiplierAtNonce(MultiplierClass scalingClass, uint256 nonce) public view override returns (uint256) {
         return classEventAtNonce(scalingClass, nonce).cumulativeMultiplier;
+    }
+
+    /// @dev Per-class factor for the composite-at-nonce view: clamps `nonce` to
+    ///      the class's current nonce so classes with divergent (shorter)
+    ///      histories contribute their latest factor instead of reverting.
+    function _clampedFactorAtNonce(MultiplierClass scalingClass, uint256 nonce) internal view returns (uint256) {
+        uint256 classNonce = getClassNonce(scalingClass);
+        uint256 n = nonce > classNonce ? classNonce : nonce;
+        return n == 0 ? UIScalingMath.MULTIPLIER_DECIMALS : classEventAtNonce(scalingClass, n).cumulativeMultiplier;
     }
 
     /// @dev Deviation from vanilla ERC-8056: returns the product over classes of

@@ -634,6 +634,41 @@ contract ERC8056CompositeTest is ScalingTestBase {
         token.classEventAtNonce(MultiplierClass.Yield, 1);
     }
 
+    function test_UiMultiplierAtNonce_DivergentHistories_DoesNotRevert() public {
+        // two Yield events (nonce 2), one Supply event (nonce 1), Other none
+        _scheduleScalingFactor(MultiplierClass.Yield, 15e17, block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 2 hours); // Yield nonce 1 effective
+        _scheduleScalingFactor(MultiplierClass.Yield, 12e17, block.timestamp + 1 hours);
+        _scheduleScalingFactor(MultiplierClass.Supply, DOUBLE, block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 2 hours); // Yield nonce 2 + Supply nonce 1 effective
+
+        // all calls succeed without revert despite divergent per-class histories
+        uint256 m1 = token.uiMultiplierAtNonce(1);
+        assertGt(m1, 0);
+        uint256 m2 = token.uiMultiplierAtNonce(2);
+        assertGt(m2, 0);
+        assertEq(token.uiMultiplierAtNonce(99), token.uiMultiplier());
+    }
+
+    function test_UiMultiplierAtNonce_ZeroReturnsNeutralComposite() public view {
+        assertEq(token.uiMultiplierAtNonce(0), NEUTRAL);
+    }
+
+    function test_GetClassNonce_GasIndependentOfHistoryLength() public {
+        for (uint256 i = 0; i < 50; i++) {
+            _scheduleScalingFactor(MultiplierClass.Yield, 11e17, block.timestamp + 1 hours);
+            vm.warp(block.timestamp + 2 hours);
+        }
+        assertEq(token.getClassNonce(MultiplierClass.Yield), 50);
+
+        uint256 start = gasleft();
+        token.getClassNonce(MultiplierClass.Yield);
+        uint256 used = start - gasleft();
+
+        emit log_named_uint("getClassNonce gas with 50 activated events", used);
+        assertLt(used, 15000);
+    }
+
     // ---- Cancel tests ----
 
     function test_cancelRestoresActiveFactor() public {
