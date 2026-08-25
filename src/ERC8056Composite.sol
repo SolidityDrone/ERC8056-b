@@ -8,6 +8,7 @@ import {IERC8056} from "./interfaces/base/IERC8056.sol";
 import {IERC8056Conversion} from "./interfaces/base/IERC8056Conversion.sol";
 import {IERC8056Balances} from "./interfaces/base/IERC8056Balances.sol";
 import {IERC8056NewUIMultiplier} from "./interfaces/base/IERC8056NewUIMultiplier.sol";
+import {IERC8056Cancel} from "./interfaces/base/IERC8056Cancel.sol";
 import {IERC8056Composite} from "./interfaces/extension/IERC8056Composite.sol";
 import {MultiplierClass} from "./interfaces/extension/IERC8056MultiplierClass.sol";
 import {UIScalingMath} from "./libraries/UIScalingMath.sol";
@@ -22,7 +23,7 @@ import {ERC8056} from "./ERC8056.sol";
  *      _effectiveAt) are preserved but unused; all scaling logic uses the
  *      class-based storage appended after the base layout.
  */
-contract ERC8056Composite is ERC8056, IERC8056Composite {
+contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     struct ClassScalingState {
         uint256 activeFactor;
         uint256 pendingFactor;
@@ -53,10 +54,7 @@ contract ERC8056Composite is ERC8056, IERC8056Composite {
     }
 
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
-        return interfaceId == type(IERC8056).interfaceId || interfaceId == type(IERC8056Conversion).interfaceId
-            || interfaceId == type(IERC8056Balances).interfaceId
-            || interfaceId == type(IERC8056NewUIMultiplier).interfaceId
-            || interfaceId == type(IERC8056Composite).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IERC8056Composite).interfaceId || super.supportsInterface(interfaceId);
     }
 
     //==============================================================================//
@@ -160,7 +158,7 @@ contract ERC8056Composite is ERC8056, IERC8056Composite {
         _setMultiplier(scalingClass, newMultiplier, effectiveAtTimestamp, id, description, uri);
     }
 
-    function cancelPendingUIMultiplier() public override(ERC8056) onlyOwner {
+    function cancelPendingUIMultiplier() public override(IERC8056Cancel, ERC8056) onlyOwner {
         revert("ERC8056: use class-based cancel");
     }
 

@@ -9,13 +9,23 @@ import {IERC8056} from "./interfaces/base/IERC8056.sol";
 import {IERC8056Conversion} from "./interfaces/base/IERC8056Conversion.sol";
 import {IERC8056Balances} from "./interfaces/base/IERC8056Balances.sol";
 import {IERC8056NewUIMultiplier} from "./interfaces/base/IERC8056NewUIMultiplier.sol";
+import {IERC8056Cancel} from "./interfaces/base/IERC8056Cancel.sol";
 
 /**
  * @title ERC8056
  * @notice Reference implementation from EIP-8056.
  * @dev See https://eips.ethereum.org/EIPS/eip-8056
  */
-contract ERC8056 is ERC20, ERC165, IERC8056, IERC8056Conversion, IERC8056Balances, IERC8056NewUIMultiplier, Ownable {
+contract ERC8056 is
+    ERC20,
+    ERC165,
+    IERC8056,
+    IERC8056Conversion,
+    IERC8056Balances,
+    IERC8056NewUIMultiplier,
+    IERC8056Cancel,
+    Ownable
+{
     uint256 private constant MULTIPLIER_DECIMALS = 1e18;
     uint256 private _uiMultiplier = MULTIPLIER_DECIMALS;
     uint256 private _newUIMultiplier = MULTIPLIER_DECIMALS;
@@ -37,7 +47,8 @@ contract ERC8056 is ERC20, ERC165, IERC8056, IERC8056Conversion, IERC8056Balance
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
         return interfaceId == type(IERC8056).interfaceId || interfaceId == type(IERC8056Conversion).interfaceId
             || interfaceId == type(IERC8056Balances).interfaceId
-            || interfaceId == type(IERC8056NewUIMultiplier).interfaceId || super.supportsInterface(interfaceId);
+            || interfaceId == type(IERC8056NewUIMultiplier).interfaceId || interfaceId == type(IERC8056Cancel).interfaceId
+            || super.supportsInterface(interfaceId);
     }
 
     function uiMultiplier() public view virtual override returns (uint256) {
@@ -71,7 +82,7 @@ contract ERC8056 is ERC20, ERC165, IERC8056, IERC8056Conversion, IERC8056Balance
         emit UIMultiplierUpdated(previousMultiplier, newMultiplier, effectiveAtTimestamp);
     }
 
-    function cancelPendingUIMultiplier() external virtual override onlyOwner {
+    function cancelPendingUIMultiplier() external virtual override(IERC8056Cancel) onlyOwner {
         if (_effectiveAt == 0 || block.timestamp >= _effectiveAt) revert NothingToCancel();
 
         uint256 pendingMultiplier = _newUIMultiplier;

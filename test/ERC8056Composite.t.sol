@@ -7,6 +7,7 @@ import {ERC8056Composite} from "../src/ERC8056Composite.sol";
 import {IERC8056Composite} from "../src/interfaces/extension/IERC8056Composite.sol";
 import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
 import {IERC8056NewUIMultiplier} from "../src/interfaces/base/IERC8056NewUIMultiplier.sol";
+import {IERC8056Cancel} from "../src/interfaces/base/IERC8056Cancel.sol";
 import {UIScalingMath} from "../src/libraries/UIScalingMath.sol";
 
 contract ERC8056CompositeTest is ScalingTestBase {
@@ -59,6 +60,15 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
     function test_initial_supportsClassedInterface() public view {
         assertTrue(token.supportsInterface(type(IERC8056Composite).interfaceId));
+    }
+
+    function test_SpecInterfaceID_Preserved() public pure {
+        // EIP-8056 mandates IScaledUIAmountNewUIMultiplier = 0x4bd27648
+        assertEq(type(IERC8056NewUIMultiplier).interfaceId, bytes4(0x4bd27648));
+    }
+
+    function test_CancelInterfaceID_Exposed() public view {
+        assertTrue(token.supportsInterface(type(IERC8056Cancel).interfaceId));
     }
 
     //==============================================================================//
@@ -661,7 +671,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
         emit IERC8056Composite.UIScalingFactorCancelled(MultiplierClass.Yield, DOUBLE, NEUTRAL, block.timestamp);
 
         vm.expectEmit(false, true, true, false);
-        emit IERC8056NewUIMultiplier.UIMultiplierCancelled(DOUBLE, NEUTRAL, block.timestamp);
+        emit IERC8056Cancel.UIMultiplierCancelled(DOUBLE, NEUTRAL, block.timestamp);
 
         vm.prank(owner);
         token.cancelPendingUIMultiplier(MultiplierClass.Yield);

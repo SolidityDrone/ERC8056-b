@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {ERC8056} from "../src/ERC8056.sol";
 import {IERC8056} from "../src/interfaces/base/IERC8056.sol";
 import {IERC8056NewUIMultiplier} from "../src/interfaces/base/IERC8056NewUIMultiplier.sol";
+import {IERC8056Cancel} from "../src/interfaces/base/IERC8056Cancel.sol";
 
 contract ERC8056Test is Test {
     ERC8056 internal token;
@@ -27,9 +28,21 @@ contract ERC8056Test is Test {
     function test_supportsInterface() public view {
         assertTrue(token.supportsInterface(type(IERC8056).interfaceId));
         assertTrue(token.supportsInterface(0xa60bf13d));
-        assertTrue(token.supportsInterface(0xb80fdcb6));
+        assertTrue(token.supportsInterface(0x4bd27648));
+        assertTrue(token.supportsInterface(type(IERC8056Cancel).interfaceId));
         assertTrue(token.supportsInterface(0x57854fc3));
         assertTrue(token.supportsInterface(0xd890fd71));
+        // The pre-fix drifted ID (spec ID XOR cancel selector) must no longer be advertised
+        assertFalse(token.supportsInterface(0xb80fdcb6));
+    }
+
+    function test_SpecInterfaceID_Preserved() public pure {
+        // EIP-8056 mandates IScaledUIAmountNewUIMultiplier = 0x4bd27648
+        assertEq(type(IERC8056NewUIMultiplier).interfaceId, bytes4(0x4bd27648));
+    }
+
+    function test_CancelInterfaceID_Exposed() public view {
+        assertTrue(token.supportsInterface(type(IERC8056Cancel).interfaceId));
     }
 
     function test_stockSplitDoublesUIBalance() public {
@@ -107,7 +120,7 @@ contract ERC8056Test is Test {
         token.setUIMultiplier(2 * MULTIPLIER_DECIMALS, effectiveAt);
 
         vm.expectEmit(true, true, true, true);
-        emit IERC8056NewUIMultiplier.UIMultiplierCancelled(
+        emit IERC8056Cancel.UIMultiplierCancelled(
             2 * MULTIPLIER_DECIMALS, MULTIPLIER_DECIMALS, block.timestamp
         );
 
