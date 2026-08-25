@@ -6,7 +6,7 @@ import {ERC8056PairWrapper} from "../src/wrapper/ERC8056PairWrapper.sol";
 import {IERC8056PairWrapper} from "../src/wrapper/interfaces/IERC8056PairWrapper.sol";
 import {LegToken} from "../src/wrapper/LegToken.sol";
 import {ERC8056Composite} from "../src/extensions/ERC8056Composite.sol";
-import {MultiplierClass} from "../src/extensions/interfaces/MultiplierClass.sol";
+import {MultiplierClass} from "../src/extensions/interfaces/IERC8056MultiplierClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";

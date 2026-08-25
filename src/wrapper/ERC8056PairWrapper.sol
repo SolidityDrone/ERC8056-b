@@ -7,7 +7,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC8056Composite} from "../extensions/interfaces/IERC8056Composite.sol";
 import {IERC8056PairWrapper} from "./interfaces/IERC8056PairWrapper.sol";
-import {MultiplierClass} from "../extensions/interfaces/MultiplierClass.sol";
+import {MultiplierClass} from "../extensions/interfaces/IERC8056MultiplierClass.sol";
 import {UIScalingMath} from "../libraries/UIScalingMath.sol";
 import {LegToken} from "./LegToken.sol";
 

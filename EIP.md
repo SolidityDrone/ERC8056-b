@@ -260,7 +260,7 @@ The full reference implementation is available at [github.com/SolidityDrone/ERC8
 - `ERC8056Composite.sol` -- the class-decomposed extension contract.
 - `UIScalingMath.sol` -- canonical composite math library.
 - `IERC8056Composite.sol` -- the extension interface.
-- `MultiplierClass.sol` -- the multiplier-class enum.
+- `IERC8056MultiplierClass.sol` -- the multiplier-class enum.
 - `ERC8056PairWrapper.sol` -- the Capital/Yield wrapper (reference consumer).
 - `ERC8056PairWrapperRegistry.sol` -- canonical per-asset wrapper discovery.
 - `IERC8056PairWrapper.sol` -- the wrapper integration interface.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {MultiplierClass} from "./MultiplierClass.sol";
+import {MultiplierClass} from "./IERC8056MultiplierClass.sol";
 
 /**
  * @dev Extension interface for decomposed UI scaling (EIP-8056 improvement).

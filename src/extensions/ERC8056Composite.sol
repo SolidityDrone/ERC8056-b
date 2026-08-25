@@ -9,7 +9,7 @@ import {IERC8056Conversion} from "../interfaces/IERC8056Conversion.sol";
 import {IERC8056Balances} from "../interfaces/IERC8056Balances.sol";
 import {IERC8056NewUIMultiplier} from "../interfaces/IERC8056NewUIMultiplier.sol";
 import {IERC8056Composite} from "./interfaces/IERC8056Composite.sol";
-import {MultiplierClass} from "./interfaces/MultiplierClass.sol";
+import {MultiplierClass} from "./interfaces/IERC8056MultiplierClass.sol";
 import {UIScalingMath} from "../libraries/UIScalingMath.sol";
 import {Arrays} from "@openzeppelin/contracts/utils/Arrays.sol";
 

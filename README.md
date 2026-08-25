@@ -81,7 +81,7 @@ forge script script/DeployERC8056Composite.s.sol --rpc-url <RPC> --broadcast
 │   │   ├── ERC8056Composite.sol    # class-decomposed extension
 │   │   └── interfaces/             # extension-only interfaces
 │   │       ├── IERC8056Composite.sol   # class extension interface
-│   │       └── MultiplierClass.sol      # enum { Supply, Yield, Other }
+│   │       └── IERC8056MultiplierClass.sol      # enum { Supply, Yield, Other }
 │   ├── wrapper/
 │   │   ├── ERC8056PairWrapper.sol      # Capital/Yield window wrapper (standalone)
 │   │   ├── ERC8056PairWrapperRegistry.sol # canonical per-asset wrapper discovery
