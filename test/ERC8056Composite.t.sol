@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC8056} from "../src/ERC8056.sol";
 import {ERC8056Composite} from "../src/ERC8056Composite.sol";
 import {IERC8056Composite} from "../src/interfaces/extension/IERC8056Composite.sol";
@@ -725,5 +726,76 @@ contract ERC8056CompositeTest is ScalingTestBase {
         vm.prank(owner);
         vm.expectRevert("ERC8056: use class-based cancel");
         token.cancelPendingUIMultiplier();
+    }
+
+    //==============================================================================//
+    // Lazy genesis: upgrade from vanilla ERC8056 proxy                             //
+    //==============================================================================//
+
+    bytes32 constant IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
+    function test_UpgradeFromVanilla_ThenSchedule_Works() public {
+        // 1. deploy vanilla ERC8056 behind ERC1967Proxy (as issuer would in prod)
+        ERC1967Proxy proxy = new ERC1967Proxy(address(new ERC8056("v", "V", owner)), "");
+        // vanilla has no initializer: replicate its constructor-initialized owner
+        // storage in the proxy (slot 5 = Ownable._owner per ERC8056 layout)
+        vm.store(address(proxy), bytes32(uint256(5)), bytes32(uint256(uint160(owner))));
+        ERC8056Composite upgraded = ERC8056Composite(address(proxy));
+
+        vm.prank(owner);
+        upgraded.mint(holder, RAW_STAKE);
+
+        // 2. upgrade implementation slot to a fresh ERC8056Composite
+        //    (constructor runs on the impl only, proxy storage untouched)
+        address compositeImpl = address(new ERC8056Composite("v", "V", owner));
+        vm.store(address(proxy), IMPL_SLOT, bytes32(uint256(uint160(compositeImpl))));
+
+        // genesis reads on the upgraded proxy must be neutral
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Yield), NEUTRAL);
+        assertEq(upgraded.uiMultiplier(), NEUTRAL);
+        assertEq(upgraded.newUIMultiplier(MultiplierClass.Yield), NEUTRAL);
+        assertEq(upgraded.getClassNonce(MultiplierClass.Yield), 0);
+
+        // 3. first schedule must NOT revert with ZeroFactor
+        uint256 effectiveAt = block.timestamp + 10;
+        vm.prank(owner);
+        upgraded.setUIMultiplier(MultiplierClass.Yield, DOUBLE, effectiveAt, "", "", "");
+
+        assertEq(upgraded.newUIMultiplier(MultiplierClass.Yield), DOUBLE);
+        assertTrue(upgraded.hasPendingUIMultiplier(MultiplierClass.Yield));
+
+        vm.warp(effectiveAt + 1);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Yield), DOUBLE);
+        assertEq(upgraded.getClassNonce(MultiplierClass.Yield), 1);
+        assertEq(upgraded.uiMultiplier(), DOUBLE);
+        // other classes lazily genesis at 1e18
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Supply), NEUTRAL);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Other), NEUTRAL);
+        assertEq(upgraded.balanceOfUI(holder), 200 ether);
+
+        // 4. second schedule + cancel cycle works on the bootstrapped state
+        effectiveAt = block.timestamp + 10;
+        vm.prank(owner);
+        upgraded.setUIMultiplier(MultiplierClass.Yield, 4 * NEUTRAL, effectiveAt, "", "", "");
+
+        vm.prank(owner);
+        upgraded.cancelPendingUIMultiplier(MultiplierClass.Yield);
+
+        assertFalse(upgraded.hasPendingUIMultiplier(MultiplierClass.Yield));
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Yield), DOUBLE);
+        assertEq(upgraded.uiMultiplier(), DOUBLE);
+
+        // cancelled schedule stays cancelled past its would-be effective time
+        vm.warp(effectiveAt + 1);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Yield), DOUBLE);
+        assertEq(upgraded.uiMultiplier(), DOUBLE);
+
+        // a fresh schedule still activates normally
+        effectiveAt = block.timestamp + 10;
+        vm.prank(owner);
+        upgraded.setUIMultiplier(MultiplierClass.Yield, 4 * NEUTRAL, effectiveAt, "", "", "");
+        vm.warp(effectiveAt + 1);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Yield), 4 * NEUTRAL);
+        assertEq(upgraded.uiMultiplier(), 4 * NEUTRAL);
     }
 }

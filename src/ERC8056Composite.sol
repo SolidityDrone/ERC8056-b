@@ -88,7 +88,7 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     }
 
     function newUIMultiplier(MultiplierClass scalingClass) public view override returns (uint256) {
-        return _classScaling[scalingClass].pendingFactor;
+        return _pendingFactor(scalingClass);
     }
 
     function effectiveAt(MultiplierClass scalingClass) public view override returns (uint256) {
@@ -118,8 +118,7 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         _validateScalingClass(scalingClass);
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
         uint256 nonce;
-        for (uint256 i = 1; i < history.length; i++) {
-            if (history[i].effectiveAt <= block.timestamp) {
+        for (uint256 i = 1; i < history.length; i++) {            if (history[i].effectiveAt <= block.timestamp) {
                 nonce++;
             } else {
                 break;
@@ -169,11 +168,13 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         ClassScalingState storage state = _classScaling[scalingClass];
         uint256 pendingFactor = state.pendingFactor;
 
-        state.pendingFactor = state.activeFactor;
+        state.pendingFactor = _activeFactor(scalingClass);
         state.effectiveAt = type(uint256).max;
 
-        _checkpoints[scalingClass].pop();
-        _checkpointTimestamps[scalingClass].pop();
+        if (_checkpoints[scalingClass].length > 0) {
+            _checkpoints[scalingClass].pop();
+            _checkpointTimestamps[scalingClass].pop();
+        }
 
         emit UIScalingFactorCancelled(scalingClass, pendingFactor, state.activeFactor, block.timestamp);
         emit UIMultiplierCancelled(pendingFactor, state.activeFactor, block.timestamp);
@@ -201,7 +202,14 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
             history.pop();
             _checkpointTimestamps[scalingClass].pop();
         } else if (block.timestamp >= state.effectiveAt) {
-            state.activeFactor = state.pendingFactor;
+            state.activeFactor = _pendingFactor(scalingClass);
+        }
+
+        if (history.length == 0) {
+            // lazy genesis: upgraded vanilla proxies have no checkpoint history;
+            // synthesize the genesis entry so indexing matches direct deploys
+            history.push(ScalingCheckpoint(0, UIScalingMath.MULTIPLIER_DECIMALS, 0));
+            _checkpointTimestamps[scalingClass].push(0);
         }
 
         state.pendingFactor = newMultiplier;
@@ -320,7 +328,17 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     }
 
     function _factorForComposite(MultiplierClass scalingClass) internal view returns (uint256) {
-        return _classScaling[scalingClass].pendingFactor;
+        return _pendingFactor(scalingClass);
+    }
+
+    function _activeFactor(MultiplierClass c) internal view returns (uint256 f) {
+        f = _classScaling[c].activeFactor;
+        if (f == 0) f = UIScalingMath.MULTIPLIER_DECIMALS;
+    }
+
+    function _pendingFactor(MultiplierClass c) internal view returns (uint256 f) {
+        f = _classScaling[c].pendingFactor;
+        if (f == 0) f = UIScalingMath.MULTIPLIER_DECIMALS;
     }
 
     function _validateScalingClass(MultiplierClass scalingClass) internal pure {
