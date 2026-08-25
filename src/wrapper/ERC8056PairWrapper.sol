@@ -257,15 +257,21 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
     }
 
     /// @dev Remaining raw backing of window (start, target):
-    ///      capitalSupply * capitalShare + yieldSupply * coupon (frozen pricing);
+    ///      - Pre-maturity (current yield nonce < targetNonce): both legs redeem 1:1
+    ///        via {unwrap}, so backing = capitalSupply + yieldSupply.
+    ///      - Matured (current yield nonce >= targetNonce): capitalSupply * capitalShare
+    ///        + yieldSupply * coupon (frozen pricing).
     ///      0 for a nonexistent pair.
     function windowBackingOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
         IERC8056PairWrapper.Pair storage pair = _pairs[startNonce][targetNonce];
         if (address(pair.capital) == address(0)) return 0;
+        if (scaledUnderlying.getClassNonce(MultiplierClass.Yield) < targetNonce) {
+            return capitalSupplyOf(startNonce, targetNonce) + yieldSupplyOf(startNonce, targetNonce);
+        }
         uint256 coupon = _couponOf(startNonce, targetNonce);
         uint256 share = UIScalingMath.MULTIPLIER_DECIMALS - coupon;
-        return Math.mulDiv(pair.capital.totalSupply(), share, 1e18)
-            + Math.mulDiv(pair.yield.totalSupply(), coupon, 1e18);
+        return Math.mulDiv(pair.capital.totalSupply(), share, UIScalingMath.MULTIPLIER_DECIMALS)
+            + Math.mulDiv(pair.yield.totalSupply(), coupon, UIScalingMath.MULTIPLIER_DECIMALS);
     }
 
     /// @dev Frozen yield coupon of window (start, target): max(1 - Y_s/Y_t, 0), 1e18 fixed point.

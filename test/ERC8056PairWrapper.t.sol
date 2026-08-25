@@ -805,6 +805,34 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         assertEq(wrapper.windowBackingOf(1, 2), 70 ether, "backing reflects solo redemption");
     }
 
+    function test_windowBackingOf_immatureWindow_oneToOne_thenFrozen() public {
+        _advanceNonce(1 days); // nonce 1, Y = 1x
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 2); // pair (1,3), immature
+
+        // Pre-maturity: both legs redeem 1:1 via unwrap, so backing is cap+yield supply.
+        assertEq(wrapper.currentNonce(), 1, "window still immature");
+        assertEq(
+            wrapper.windowBackingOf(start, target),
+            wrapper.capitalSupplyOf(start, target) + wrapper.yieldSupplyOf(start, target),
+            "immature -> 1:1 backing"
+        );
+        assertEq(wrapper.windowBackingOf(start, target), 2 * RAW_STAKE);
+
+        vm.prank(alice);
+        wrapper.unwrap(RAW_STAKE / 2, start, target);
+        assertEq(
+            wrapper.windowBackingOf(start, target),
+            wrapper.capitalSupplyOf(start, target) + wrapper.yieldSupplyOf(start, target),
+            "immature -> 1:1 backing after partial unwrap"
+        );
+        assertEq(wrapper.windowBackingOf(start, target), RAW_STAKE); // (50 + 50) * 1:1
+
+        // Matures: frozen formula applies.
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x
+        _advanceNonce(1 days); // nonce 3 -> target reached, coupon = 0.5
+        assertEq(wrapper.windowBackingOf(start, target), RAW_STAKE / 2, "mature -> frozen formula");
+    }
+
     function test_windowBackingOf_zeroCoupon_fullCapitalBacking() public {
         _advanceNonce(1 days); // nonce 1, Y = 1x
         _wrapLocked(alice, RAW_STAKE, 1); // pair (1,2)

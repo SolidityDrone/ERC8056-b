@@ -85,12 +85,12 @@ interface IERC8056PairWrapper {
     function capitalSupplyOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
     function yieldSupplyOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
 
-    /// @dev Aggregate capital / yield supply across all windows.
+    /// @notice Aggregate capital supply across all windows.
     /// @dev OFF-CHAIN ONLY — loops over every created window; will exceed block gas
     ///      limits as window count grows. Never call from on-chain protocols.
     function capitalSupply() external view returns (uint256);
 
-    /// @dev Aggregate capital / yield supply across all windows.
+    /// @notice Aggregate yield supply across all windows.
     /// @dev OFF-CHAIN ONLY — loops over every created window; will exceed block gas
     ///      limits as window count grows. Never call from on-chain protocols.
     function yieldSupply() external view returns (uint256);
@@ -101,7 +101,10 @@ interface IERC8056PairWrapper {
     function rawLockedOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
 
     /// @dev Remaining raw backing of window (start, target):
-    ///      capitalSupply * capitalShare + yieldSupply * coupon (frozen pricing);
+    ///      - Pre-maturity (current yield nonce < targetNonce): both legs redeem 1:1
+    ///        via {unwrap}, so backing = capitalSupply + yieldSupply.
+    ///      - Matured (current yield nonce >= targetNonce): capitalSupply * capitalShare
+    ///        + yieldSupply * coupon (frozen pricing).
     ///      0 for a nonexistent pair. This is the truthful per-window solvency figure.
     function windowBackingOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
 
