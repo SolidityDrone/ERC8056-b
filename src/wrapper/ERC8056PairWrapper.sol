@@ -5,9 +5,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {IERC8056Composite} from "../extensions/interfaces/IERC8056Composite.sol";
-import {IERC8056PairWrapper} from "./interfaces/IERC8056PairWrapper.sol";
-import {MultiplierClass} from "../extensions/interfaces/IERC8056MultiplierClass.sol";
+import {IERC8056Composite} from "../interfaces/extension/IERC8056Composite.sol";
+import {IERC8056PairWrapper} from "../interfaces/wrapper/IERC8056PairWrapper.sol";
+import {MultiplierClass} from "../interfaces/extension/IERC8056MultiplierClass.sol";
 import {UIScalingMath} from "../libraries/UIScalingMath.sol";
 import {LegToken} from "./LegToken.sol";
 

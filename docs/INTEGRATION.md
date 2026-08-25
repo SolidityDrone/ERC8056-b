@@ -218,5 +218,5 @@ window.
 - Interface: [`IERC8056PairWrapper.sol`](../src/wrapper/interfaces/IERC8056PairWrapper.sol)
 - Registry: [`IERC8056PairWrapperRegistry.sol`](../src/wrapper/interfaces/IERC8056PairWrapperRegistry.sol), [`ERC8056PairWrapperRegistry.sol`](../src/wrapper/ERC8056PairWrapperRegistry.sol)
 - Implementation: [`ERC8056PairWrapper.sol`](../src/wrapper/ERC8056PairWrapper.sol)
-- Extension: [`IERC8056Composite.sol`](../src/extensions/interfaces/IERC8056Composite.sol)
+- Extension: [`IERC8056Composite.sol`](../src/interfaces/extension/IERC8056Composite.sol)
 - Tests: [`ERC8056PairWrapper.t.sol`](../test/ERC8056PairWrapper.t.sol), [`ERC8056PairWrapperRegistry.t.sol`](../test/ERC8056PairWrapperRegistry.t.sol)

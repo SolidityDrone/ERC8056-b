@@ -3,9 +3,9 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IERC8056Composite} from "../extensions/interfaces/IERC8056Composite.sol";
-import {IERC8056PairWrapper} from "./interfaces/IERC8056PairWrapper.sol";
-import {IERC8056PairWrapperRegistry} from "./interfaces/IERC8056PairWrapperRegistry.sol";
+import {IERC8056Composite} from "../interfaces/extension/IERC8056Composite.sol";
+import {IERC8056PairWrapper} from "../interfaces/wrapper/IERC8056PairWrapper.sol";
+import {IERC8056PairWrapperRegistry} from "../interfaces/wrapper/IERC8056PairWrapperRegistry.sol";
 import {ERC8056PairWrapper} from "./ERC8056PairWrapper.sol";
 
 /**

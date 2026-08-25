@@ -2,9 +2,9 @@
 pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
-import {ERC8056Composite} from "../src/extensions/ERC8056Composite.sol";
-import {IERC8056Composite} from "../src/extensions/interfaces/IERC8056Composite.sol";
-import {MultiplierClass} from "../src/extensions/interfaces/IERC8056MultiplierClass.sol";
+import {ERC8056Composite} from "../src/ERC8056Composite.sol";
+import {IERC8056Composite} from "../src/interfaces/extension/IERC8056Composite.sol";
+import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
 import {UIScalingMath} from "../src/libraries/UIScalingMath.sol";
 
 contract ERC8056CompositeTest is ScalingTestBase {

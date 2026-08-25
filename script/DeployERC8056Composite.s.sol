@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Script} from "forge-std/Script.sol";
-import {ERC8056Composite} from "../src/extensions/ERC8056Composite.sol";
+import {ERC8056Composite} from "../src/ERC8056Composite.sol";
 
 contract DeployERC8056Composite is Script {
     function run() external {

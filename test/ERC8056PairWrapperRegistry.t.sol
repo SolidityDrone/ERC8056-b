@@ -3,11 +3,11 @@ pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ERC8056Composite} from "../src/extensions/ERC8056Composite.sol";
+import {ERC8056Composite} from "../src/ERC8056Composite.sol";
 import {ERC8056PairWrapper} from "../src/wrapper/ERC8056PairWrapper.sol";
 import {ERC8056PairWrapperRegistry} from "../src/wrapper/ERC8056PairWrapperRegistry.sol";
-import {IERC8056PairWrapper} from "../src/wrapper/interfaces/IERC8056PairWrapper.sol";
-import {IERC8056PairWrapperRegistry} from "../src/wrapper/interfaces/IERC8056PairWrapperRegistry.sol";
+import {IERC8056PairWrapper} from "../src/interfaces/wrapper/IERC8056PairWrapper.sol";
+import {IERC8056PairWrapperRegistry} from "../src/interfaces/wrapper/IERC8056PairWrapperRegistry.sol";
 
 contract ERC8056PairWrapperRegistryTest is ScalingTestBase {
     ERC8056Composite internal underlying;
