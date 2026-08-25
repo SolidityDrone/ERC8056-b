@@ -23,6 +23,7 @@ contract ERC8056 is ERC20, ERC165, IERC8056, IERC8056Conversion, IERC8056Balance
 
     error ZeroMultiplier();
     error EffectiveAtNotInFuture();
+    error NothingToCancel();
 
     constructor(string memory name_, string memory symbol_, address initialOwner)
         ERC20(name_, symbol_)
@@ -68,6 +69,15 @@ contract ERC8056 is ERC20, ERC165, IERC8056, IERC8056Conversion, IERC8056Balance
         _newUIMultiplier = newMultiplier;
         _effectiveAt = effectiveAtTimestamp;
         emit UIMultiplierUpdated(previousMultiplier, newMultiplier, effectiveAtTimestamp);
+    }
+
+    function cancelPendingUIMultiplier() external virtual override onlyOwner {
+        if (_effectiveAt == 0 || block.timestamp >= _effectiveAt) revert NothingToCancel();
+
+        uint256 pendingMultiplier = _newUIMultiplier;
+        _newUIMultiplier = _uiMultiplier;
+        _effectiveAt = 0;
+        emit UIMultiplierCancelled(pendingMultiplier, _uiMultiplier, block.timestamp);
     }
 
     function toUIAmount(uint256 rawAmount) public view virtual override returns (uint256) {

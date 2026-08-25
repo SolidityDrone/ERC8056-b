@@ -38,6 +38,14 @@ interface IERC8056Composite {
         Announcement announcement
     );
 
+    /// @dev Emitted when a pending per-class scaling update is cancelled.
+    event UIScalingFactorCancelled(
+        MultiplierClass indexed scalingClass,
+        uint256 previousMultiplier,
+        uint256 restoredMultiplier,
+        uint256 cancelledAtTimestamp
+    );
+
     // ---- Per-class multiplier reads ----
 
     /// @dev Current cumulative multiplier for `scalingClass` (1e18 = 1.0x).
@@ -110,4 +118,10 @@ interface IERC8056Composite {
         string calldata description,
         string calldata uri
     ) external;
+
+    // ---- State-changing: cancel pending ----
+
+    /// @dev Cancels the pending scaling update for `scalingClass`, restoring the active factor.
+    ///      Reverts if no pending update exists for the class.
+    function cancelPendingUIMultiplier(MultiplierClass scalingClass) external;
 }

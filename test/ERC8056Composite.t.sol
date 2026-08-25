@@ -2,9 +2,11 @@
 pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
+import {ERC8056} from "../src/ERC8056.sol";
 import {ERC8056Composite} from "../src/ERC8056Composite.sol";
 import {IERC8056Composite} from "../src/interfaces/extension/IERC8056Composite.sol";
 import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
+import {IERC8056NewUIMultiplier} from "../src/interfaces/base/IERC8056NewUIMultiplier.sol";
 import {UIScalingMath} from "../src/libraries/UIScalingMath.sol";
 
 contract ERC8056CompositeTest is ScalingTestBase {
@@ -619,5 +621,99 @@ contract ERC8056CompositeTest is ScalingTestBase {
         token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
         vm.expectRevert(ERC8056Composite.EventNotEffective.selector);
         token.classEventAtNonce(MultiplierClass.Yield, 1);
+    }
+
+    // ---- Cancel tests ----
+
+    function test_cancelRestoresActiveFactor() public {
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
+
+        assertEq(token.newUIMultiplier(MultiplierClass.Yield), DOUBLE);
+        assertTrue(token.hasPendingUIMultiplier(MultiplierClass.Yield));
+
+        vm.prank(owner);
+        token.cancelPendingUIMultiplier(MultiplierClass.Yield);
+
+        assertEq(token.uiScalingFactor(MultiplierClass.Yield), NEUTRAL);
+        assertEq(token.newUIMultiplier(MultiplierClass.Yield), NEUTRAL);
+        assertFalse(token.hasPendingUIMultiplier(MultiplierClass.Yield));
+        assertEq(token.effectiveAt(MultiplierClass.Yield), 0);
+    }
+
+    function test_cancelPopsCheckpoint() public {
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
+
+        uint256 lenBefore = token.scalingHistoryLength(MultiplierClass.Yield);
+
+        vm.prank(owner);
+        token.cancelPendingUIMultiplier(MultiplierClass.Yield);
+
+        assertEq(token.scalingHistoryLength(MultiplierClass.Yield), lenBefore - 1);
+    }
+
+    function test_cancelEmitsEvents() public {
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
+
+        vm.expectEmit(true, true, true, true);
+        emit IERC8056Composite.UIScalingFactorCancelled(MultiplierClass.Yield, DOUBLE, NEUTRAL, block.timestamp);
+
+        vm.expectEmit(false, true, true, false);
+        emit IERC8056NewUIMultiplier.UIMultiplierCancelled(DOUBLE, NEUTRAL, block.timestamp);
+
+        vm.prank(owner);
+        token.cancelPendingUIMultiplier(MultiplierClass.Yield);
+    }
+
+    function test_revertWhenCancelNothingPending() public {
+        vm.prank(owner);
+        vm.expectRevert(ERC8056.NothingToCancel.selector);
+        token.cancelPendingUIMultiplier(MultiplierClass.Yield);
+    }
+
+    function test_revertWhenCancelAlreadyEffective() public {
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
+
+        vm.warp(block.timestamp + 1 days);
+
+        vm.prank(owner);
+        vm.expectRevert(ERC8056.NothingToCancel.selector);
+        token.cancelPendingUIMultiplier(MultiplierClass.Yield);
+    }
+
+    function test_cancelOnlyAffectsTargetClass() public {
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Supply, DOUBLE, block.timestamp + 1 days, "", "", "");
+
+        vm.prank(owner);
+        token.cancelPendingUIMultiplier(MultiplierClass.Yield);
+
+        assertFalse(token.hasPendingUIMultiplier(MultiplierClass.Yield));
+        assertTrue(token.hasPendingUIMultiplier(MultiplierClass.Supply));
+    }
+
+    function test_cancelThenReschedule() public {
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
+
+        vm.prank(owner);
+        token.cancelPendingUIMultiplier(MultiplierClass.Yield);
+
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, 3 * NEUTRAL, block.timestamp + 2 days, "", "", "");
+
+        assertEq(token.newUIMultiplier(MultiplierClass.Yield), 3 * NEUTRAL);
+        assertEq(token.effectiveAt(MultiplierClass.Yield), block.timestamp + 2 days);
+    }
+
+    function test_revertWhenCancelViaBaseSelector() public {
+        vm.prank(owner);
+        vm.expectRevert("ERC8056: use class-based cancel");
+        token.cancelPendingUIMultiplier();
     }
 }

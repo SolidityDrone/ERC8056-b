@@ -198,6 +198,14 @@ interface IERC8056Composite {
 13. A pending update MUST NOT affect the current effective multiplier or the composite multiplier until `effectiveAt` is reached.
 14. `UIScalingFactorUpdated` MUST be emitted when a multiplier is scheduled, with `{newMultiplier, multiplierRatio, effectiveAtTimestamp, classNonce, announcement}`.
 
+#### Cancelling pending updates
+
+15. `cancelPendingUIMultiplier(class)` MUST cancel a pending (not yet effective) update for `scalingClass`, restoring the active factor as both the current and pending value.
+16. The cancelled checkpoint MUST be removed from the checkpoint history.
+17. `UIMultiplierCancelled(previousMultiplier, restoredMultiplier, cancelledAtTimestamp)` MUST be emitted on the base interface.
+18. `UIScalingFactorCancelled(scalingClass, previousMultiplier, restoredMultiplier, cancelledAtTimestamp)` MUST be emitted on the extension interface.
+19. `cancelPendingUIMultiplier(class)` MUST revert with `NothingToCancel()` if no pending update exists for the class or if the pending update has already become effective.
+
 #### Yield-event derivation
 
 16. The yield nonce MUST be derived from the `Yield` checkpoint history: it counts checkpoints with `effectiveAt <= block.timestamp`, excluding the genesis checkpoint (index 0) and any pending (future) updates.

@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {ERC8056} from "../src/ERC8056.sol";
 import {IERC8056} from "../src/interfaces/base/IERC8056.sol";
+import {IERC8056NewUIMultiplier} from "../src/interfaces/base/IERC8056NewUIMultiplier.sol";
 
 contract ERC8056Test is Test {
     ERC8056 internal token;
@@ -26,7 +27,7 @@ contract ERC8056Test is Test {
     function test_supportsInterface() public view {
         assertTrue(token.supportsInterface(type(IERC8056).interfaceId));
         assertTrue(token.supportsInterface(0xa60bf13d));
-        assertTrue(token.supportsInterface(0x4bd27648));
+        assertTrue(token.supportsInterface(0xb80fdcb6));
         assertTrue(token.supportsInterface(0x57854fc3));
         assertTrue(token.supportsInterface(0xd890fd71));
     }
@@ -80,5 +81,71 @@ contract ERC8056Test is Test {
         vm.prank(owner);
         vm.expectRevert(ERC8056.EffectiveAtNotInFuture.selector);
         token.setUIMultiplier(2 * MULTIPLIER_DECIMALS, block.timestamp);
+    }
+
+    // ---- Cancel tests ----
+
+    function test_cancelRestoresPreviousMultiplier() public {
+        uint256 effectiveAt = block.timestamp + 1 days;
+        vm.prank(owner);
+        token.setUIMultiplier(2 * MULTIPLIER_DECIMALS, effectiveAt);
+
+        assertEq(token.newUIMultiplier(), 2 * MULTIPLIER_DECIMALS);
+        assertEq(token.effectiveAt(), effectiveAt);
+
+        vm.prank(owner);
+        token.cancelPendingUIMultiplier();
+
+        assertEq(token.newUIMultiplier(), MULTIPLIER_DECIMALS);
+        assertEq(token.effectiveAt(), 0);
+        assertEq(token.uiMultiplier(), MULTIPLIER_DECIMALS);
+    }
+
+    function test_cancelEmitsEvent() public {
+        uint256 effectiveAt = block.timestamp + 1 days;
+        vm.prank(owner);
+        token.setUIMultiplier(2 * MULTIPLIER_DECIMALS, effectiveAt);
+
+        vm.expectEmit(true, true, true, true);
+        emit IERC8056NewUIMultiplier.UIMultiplierCancelled(
+            2 * MULTIPLIER_DECIMALS, MULTIPLIER_DECIMALS, block.timestamp
+        );
+
+        vm.prank(owner);
+        token.cancelPendingUIMultiplier();
+    }
+
+    function test_revertWhenCancelNothingPending() public {
+        vm.prank(owner);
+        vm.expectRevert(ERC8056.NothingToCancel.selector);
+        token.cancelPendingUIMultiplier();
+    }
+
+    function test_revertWhenCancelAfterEffective() public {
+        uint256 effectiveAt = block.timestamp + 1 days;
+        vm.prank(owner);
+        token.setUIMultiplier(2 * MULTIPLIER_DECIMALS, effectiveAt);
+
+        vm.warp(effectiveAt);
+
+        vm.prank(owner);
+        vm.expectRevert(ERC8056.NothingToCancel.selector);
+        token.cancelPendingUIMultiplier();
+    }
+
+    function test_cancelAllowsNewSchedule() public {
+        uint256 effectiveAt = block.timestamp + 1 days;
+        vm.prank(owner);
+        token.setUIMultiplier(2 * MULTIPLIER_DECIMALS, effectiveAt);
+
+        vm.prank(owner);
+        token.cancelPendingUIMultiplier();
+
+        uint256 newEffectiveAt = block.timestamp + 2 days;
+        vm.prank(owner);
+        token.setUIMultiplier(3 * MULTIPLIER_DECIMALS, newEffectiveAt);
+
+        assertEq(token.newUIMultiplier(), 3 * MULTIPLIER_DECIMALS);
+        assertEq(token.effectiveAt(), newEffectiveAt);
     }
 }

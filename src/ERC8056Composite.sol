@@ -160,6 +160,27 @@ contract ERC8056Composite is ERC8056, IERC8056Composite {
         _setMultiplier(scalingClass, newMultiplier, effectiveAtTimestamp, id, description, uri);
     }
 
+    function cancelPendingUIMultiplier() public override(ERC8056) onlyOwner {
+        revert("ERC8056: use class-based cancel");
+    }
+
+    function cancelPendingUIMultiplier(MultiplierClass scalingClass) public override(IERC8056Composite) onlyOwner {
+        _validateScalingClass(scalingClass);
+        if (!hasPendingUIMultiplier(scalingClass)) revert NothingToCancel();
+
+        ClassScalingState storage state = _classScaling[scalingClass];
+        uint256 pendingFactor = state.pendingFactor;
+
+        state.pendingFactor = state.activeFactor;
+        state.effectiveAt = type(uint256).max;
+
+        _checkpoints[scalingClass].pop();
+        _checkpointTimestamps[scalingClass].pop();
+
+        emit UIScalingFactorCancelled(scalingClass, pendingFactor, state.activeFactor, block.timestamp);
+        emit UIMultiplierCancelled(pendingFactor, state.activeFactor, block.timestamp);
+    }
+
     function _setMultiplier(
         MultiplierClass scalingClass,
         uint256 newMultiplier,

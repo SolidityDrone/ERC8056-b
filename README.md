@@ -71,7 +71,7 @@ of 100 handler calls (~70 s) and is configured in `foundry.toml`.
 │   │   │   ├── IERC8056.sol        # core 8056 interface
 │   │   │   ├── IERC8056Conversion.sol  # toUIAmount/fromUIAmount
 │   │   │   ├── IERC8056Balances.sol    # balanceOfUI/totalSupplyUI
-│   │   │   └── IERC8056NewUIMultiplier.sol # newUIMultiplier/effectiveAt
+│   │   │   └── IERC8056NewUIMultiplier.sol # newUIMultiplier/effectiveAt/cancelPendingUIMultiplier
 │   │   ├── extension/              # extension-only interfaces
 │   │   │   ├── IERC8056Composite.sol   # class extension interface
 │   │   │   └── IERC8056MultiplierClass.sol # enum { Supply, Yield, Other }
@@ -108,7 +108,7 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 | Interface | Methods |
 |-----------|---------|
 | `IERC8056` | `uiMultiplier()`, `UIMultiplierUpdated`, `TransferWithUIAmount` |
-| `IERC8056NewUIMultiplier` | `newUIMultiplier()`, `effectiveAt()` |
+| `IERC8056NewUIMultiplier` | `newUIMultiplier()`, `effectiveAt()`, `cancelPendingUIMultiplier()` |
 | `IERC8056Conversion` | `toUIAmount(uint256)`, `fromUIAmount(uint256)` |
 | `IERC8056Balances` | `balanceOfUI(address)`, `totalSupplyUI()` |
 

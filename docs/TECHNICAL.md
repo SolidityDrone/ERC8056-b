@@ -22,6 +22,10 @@ keeps every EIP-8056 function untouched and adds:
 - **Scheduled (pending) updates per class.** `setUIMultiplier(class, multiplier,
   ts)` schedules an absolute multiplier. Nothing activates before
   `effectiveAt` — a pending update does not move today's multiplier.
+- **Cancel pending updates.** `cancelPendingUIMultiplier(class)` removes a
+  pending update, restoring the active factor. Emits `UIMultiplierCancelled`
+  (base) and `UIScalingFactorCancelled` (extension). Reverts with
+  `NothingToCancel()` if no pending update exists.
 - **A checkpoint history per class.** `scalingCheckpointAt`, `scalingHistoryLength`. Each checkpoint is `{effectiveAt, cumulativeMultiplier, multiplierRatio}`. Once a checkpoint becomes effective it is permanent; a scheduled-but-not-yet-effective (pending) checkpoint is replaced if rescheduled, so only *landed* events are frozen.
 - **A yield-event log and nonce.** `getClassNonce(MultiplierClass.Yield)` counts effective Yield
   updates; `classEventAtNonce(MultiplierClass.Yield, nonce)` returns `{timestamp, cumulativeMultiplier, multiplierRatio}`. This is the
