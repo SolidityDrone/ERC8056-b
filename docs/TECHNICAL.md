@@ -292,8 +292,19 @@ genesis checkpoint on the fly.
 3. **Done — but note the post-upgrade view semantics:**
    - `scalingHistoryLength(class)` returns **0** until the first schedule on
      that class bootstraps genesis.
-   - All factor reads still return `1e18` (the composite stays correct via
-     history-derived active factors).
+   - `classEventAtNonce(class, 0)` returns a **synthetic genesis event**
+     `{timestamp: 0, cumulativeMultiplier: 1e18, multiplierRatio: 0}` while the
+     history is empty (matching direct deploys), so degenerate wrapper windows
+     `(0, 0)` stay readable. Nonces > 0 revert until the first schedule lands.
+   - **Factor reads return `1e18` only if the vanilla token's pre-upgrade
+     multiplier was neutral.** The vanilla `_uiMultiplier` storage slot is
+     preserved but *unused*: a non-neutral vanilla multiplier is NOT carried
+     into class state — upgrading resets the display denomination to 1x.
+     Issuers MUST re-schedule the equivalent Supply-class factor immediately
+     post-upgrade (`setUIMultiplier(MultiplierClass.Supply, oldMultiplier, ...)`,
+     behind a timelock if possible) and BEFORE users transact; otherwise
+     `balanceOfUI`, `toUIAmount`, and every UI conversion silently shift by the
+     dropped factor.
 4. After the first schedule per class, indexing matches direct deploys
    exactly.
 

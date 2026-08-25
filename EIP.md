@@ -161,7 +161,8 @@ interface IERC8056Composite {
 
     // Composite multiplier as of the era opened by the n-th event of any class.
     // Per class the nonce is clamped to the class's current nonce, so classes
-    // with fewer events contribute their latest factor (never reverts).
+    // with fewer events contribute their latest factor (saturates at
+    // type(uint256).max rather than reverting).
     function uiMultiplierAtNonce(uint256 nonce) external view returns (uint256);
 
     // Cumulative multiplier for a single class at a past nonce (1-based).
@@ -265,7 +266,8 @@ The composite implementation keeps every vanilla ERC-8056 interface ID intact, b
 - **Legacy 2-arg setter routes to a class.** `setUIMultiplier(uint256 newMultiplier, uint256 effectiveAtTimestamp)` delegates to the **Supply** class (with empty announcement fields), emitting both `UIScalingFactorUpdated` and `UIMultiplierUpdated`. Vanilla ERC-8056 writes a single dead storage slot; writing it silently here would never be observed by any class-derived read.
 - **Composite pending views.** Base `newUIMultiplier()` returns the product over classes of the *pending* factor where a live announcement exists and the active factor otherwise (i.e. the composite once every pending update lands). Base `effectiveAt()` returns the earliest pending `effectiveAt` across classes; if no class has a live announcement it returns the most recent effective event timestamp across classes (`0` only when nothing was ever scheduled) instead of resetting to 0.
 - **Cancel requires a class.** The parameterless `cancelPendingUIMultiplier()` reverts with `"ERC8056: use class-based cancel"`. Cancelling MUST go through `cancelPendingUIMultiplier(MultiplierClass scalingClass)`, which emits both `UIScalingFactorCancelled(scalingClass, ...)` and the base `UIMultiplierCancelled(...)`.
-- **Composite-at-nonce clamping.** `uiMultiplierAtNonce(uint256 nonce)` composes per-class factors at `min(nonce, getClassNonce(class))`, with `nonce 0` contributing `1e18`. It therefore never reverts for arbitrarily large nonces and equals `uiMultiplier()` for any sufficiently large `nonce`. The per-class overload reverts for nonces beyond the class history, as in requirement 21.
+- **Composite-at-nonce clamping.** `uiMultiplierAtNonce(uint256 nonce)` composes per-class factors at `min(nonce, getClassNonce(class))`, with `nonce 0` contributing `1e18`. The composition **saturates at `type(uint256).max` rather than reverting**, so it never reverts for extreme era-mixed factors or arbitrarily large nonces, and equals `uiMultiplier()` for any sufficiently large representable `nonce`. The per-class overload reverts for nonces beyond the class history, as in requirement 21.
+- **Synthetic genesis on empty history.** If a class has no checkpoint history yet (a freshly-upgraded vanilla proxy), `classEventAtNonce(class, 0)` MUST return the synthetic genesis event `{timestamp: 0, cumulativeMultiplier: 1e18, multiplierRatio: 0}` instead of reverting — matching direct deploys, where index 0 IS genesis. Nonces > 0 still revert with `EventNotRecorded`. This keeps degenerate wrapper windows `(0, 0)` readable before the issuer's first schedule bootstraps real genesis.
 - **Schedule-time overflow guard.** Scheduling a factor whose pending composite would overflow reverts with `CompositeOverflow()` instead of an arithmetic panic.
 
 
@@ -379,6 +381,8 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
 > transaction is needed — the first `setUIMultiplier` call on each class
 > bootstraps the genesis checkpoint (`effectiveAt = 0`,
 > `cumulativeMultiplier = 1e18`), after which indexing matches direct deploys.
+> While the history is empty, `classEventAtNonce(class, 0)` returns the
+> synthetic genesis event `{0, 1e18, 0}` instead of reverting (see deviations).
 
 ### Capital/Yield wrapper (practical reference)
 

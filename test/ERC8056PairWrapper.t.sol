@@ -12,6 +12,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ERC8056} from "../src/ERC8056.sol";
 
 /// @dev Mock ERC-20 that takes a 10% fee on every transfer (mint exempt).
 contract FeeOnTransferMock is ERC20 {
@@ -878,5 +880,49 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
 
         assertEq(_capitalOf(bareWrapper, start, target).decimals(), 18, "fallback to 18 when decimals() unavailable");
         assertEq(_yieldOf(bareWrapper, start, target).decimals(), 18);
+    }
+
+    //==============================================================================//
+    // Upgraded vanilla proxy: degenerate (0,0) window must not brick funds         //
+    //==============================================================================//
+    bytes32 constant IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
+    /// @dev Regression: wrap(amount, 0) on a freshly-upgraded proxy creates window
+    ///      (0,0); unwrap/solo legs/preview must resolve via the synthetic genesis
+    ///      event instead of reverting EventNotRecorded.
+    function test_upgradedVanillaProxy_wrapLockZero_unwrapPaysBack() public {
+        ERC1967Proxy proxy = new ERC1967Proxy(address(new ERC8056("v", "V", owner)), "");
+        vm.store(address(proxy), bytes32(uint256(5)), bytes32(uint256(uint160(owner))));
+        address compositeImpl = address(new ERC8056Composite("v", "V", owner));
+        vm.store(address(proxy), IMPL_SLOT, bytes32(uint256(uint160(compositeImpl))));
+        ERC8056Composite upgraded = ERC8056Composite(address(proxy));
+
+        ERC8056PairWrapper w = new ERC8056PairWrapper(IERC20(address(upgraded)), upgraded, "Tesla", "Tesla");
+
+        vm.prank(owner);
+        upgraded.mint(alice, RAW_STAKE);
+        vm.startPrank(alice);
+        upgraded.approve(address(w), type(uint256).max);
+        (uint256 start, uint256 target) = w.wrap(RAW_STAKE, 0);
+        assertEq(start, 0, "window starts at empty-history nonce 0");
+        assertEq(target, 0);
+
+        assertTrue(w.hasPair(0, 0));
+        assertEq(w.couponOf(0, 0), 0, "degenerate window: coupon 0");
+        assertEq(w.capitalShareOf(0, 0), NEUTRAL);
+
+        (uint256 capOut, uint256 yldOut) = w.previewUnwrap(RAW_STAKE, 0, 0);
+        assertEq(capOut, RAW_STAKE);
+        assertEq(yldOut, 0);
+
+        // matured gate passes (classNonce 0 >= target 0) and solo previews resolve
+        assertEq(w.previewUnwrapCapital(RAW_STAKE, 0, 0), RAW_STAKE);
+        assertEq(w.previewUnwrapYield(RAW_STAKE, 0, 0), 0);
+
+        w.unwrap(RAW_STAKE, 0, 0);
+        vm.stopPrank();
+
+        assertEq(upgraded.balanceOf(alice), RAW_STAKE, "full amount paid back");
+        assertEq(w.windowBackingOf(0, 0), 0);
     }
 }

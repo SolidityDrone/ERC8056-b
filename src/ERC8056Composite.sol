@@ -135,7 +135,17 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         _validateScalingClass(scalingClass);
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
         uint256 index = nonce;
-        if (index >= history.length) revert EventNotRecorded();
+        if (index >= history.length) {
+            // Lazy genesis: a freshly-upgraded vanilla proxy has no checkpoint
+            // history until its first schedule bootstraps genesis. Nonce 0 then
+            // resolves to a synthetic neutral genesis event, matching direct
+            // deploys (where index 0 IS genesis) and keeping degenerate wrapper
+            // windows (0,0) readable instead of bricking funds.
+            if (index == 0 && history.length == 0) {
+                return ClassScalingEvent(0, UIScalingMath.MULTIPLIER_DECIMALS, 0);
+            }
+            revert EventNotRecorded();
+        }
         if (history[index].effectiveAt > block.timestamp) revert EventNotEffective();
         return ClassScalingEvent(
             history[index].effectiveAt, history[index].cumulativeMultiplier, history[index].multiplierRatio
@@ -262,11 +272,39 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     }
 
     function uiMultiplierAtNonce(uint256 nonce) external view override returns (uint256) {
-        return UIScalingMath.composeUiMultiplier(
+        return _saturatingCompositeAtNonce(
             _clampedFactorAtNonce(MultiplierClass.Supply, nonce),
             _clampedFactorAtNonce(MultiplierClass.Yield, nonce),
             _clampedFactorAtNonce(MultiplierClass.Other, nonce)
         );
+    }
+
+    /// @dev Saturating `a * b` for the composite-at-nonce path ONLY (the live
+    ///      `uiMultiplier()` path and `_setMultiplier` keep exact math): clamping
+    ///      factors from divergent eras can mix extreme values whose product
+    ///      overflows; here the composition saturates at type(uint256).max
+    ///      instead of reverting.
+    function _mulDivOrMax(uint256 a, uint256 b) private pure returns (uint256) {
+        if (a > type(uint256).max / b) return type(uint256).max;
+        return a * b;
+    }
+
+    /// @dev Saturating composite for {uiMultiplierAtNonce}: product of the class
+    ///      factors over 1e18 fixed point, clamped to type(uint256).max.
+    function _saturatingCompositeAtNonce(uint256 supplyFactor, uint256 yieldFactor, uint256 otherFactor)
+        private
+        pure
+        returns (uint256)
+    {
+        uint256 decimals = UIScalingMath.MULTIPLIER_DECIMALS;
+        uint256[3] memory factors = [supplyFactor, yieldFactor, otherFactor];
+        uint256 result = decimals;
+        for (uint256 i = 0; i < UIScalingMath.SCALING_CLASS_COUNT; i++) {
+            result = _mulDivOrMax(result, factors[i]);
+            if (result == type(uint256).max) return type(uint256).max;
+            result /= decimals;
+        }
+        return result;
     }
 
     function uiMultiplierAtNonce(MultiplierClass scalingClass, uint256 nonce) public view override returns (uint256) {

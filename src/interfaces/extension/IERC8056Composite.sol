@@ -71,8 +71,9 @@ interface IERC8056Composite {
 
     /// @dev Composite multiplier as of the era opened by the n-th event of any
     ///      class. Per class, the nonce is clamped to the class's current nonce,
-    ///      so classes with fewer events contribute their latest factor (and
-    ///      never revert, even for arbitrarily large nonces).
+    ///      so classes with fewer events contribute their latest factor. The
+    ///      composition saturates at type(uint256).max rather than reverting,
+    ///      even for extreme era-mixed factors or arbitrarily large nonces.
     function uiMultiplierAtNonce(uint256 nonce) external view returns (uint256);
 
     /// @dev Cumulative multiplier for a single class at a past nonce.
@@ -86,7 +87,10 @@ interface IERC8056Composite {
 
     /// @dev Scaling event for `scalingClass` at 1-based `nonce` (genesis is not an event;
     ///      nonce 0 returns the genesis checkpoint).
-    ///      Returns `{timestamp, cumulativeMultiplier, multiplierRatio}`. Reverts if not recorded or not yet effective.
+    ///      Returns `{timestamp, cumulativeMultiplier, multiplierRatio}`. If no
+    ///      checkpoint history exists yet (freshly-upgraded proxy), nonce 0
+    ///      returns a synthetic neutral genesis `{0, 1e18, 0}`. Reverts if not
+    ///      recorded or not yet effective.
     function classEventAtNonce(MultiplierClass scalingClass, uint256 nonce)
         external
         view

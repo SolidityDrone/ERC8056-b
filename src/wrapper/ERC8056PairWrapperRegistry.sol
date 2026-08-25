@@ -50,14 +50,14 @@ contract ERC8056PairWrapperRegistry is IERC8056PairWrapperRegistry {
         // Display metadata is derived from the underlying itself so the FIRST
         // caller cannot squat misleading name/symbol on a standard token; the
         // `name`/`symbol` params are used ONLY when the underlying lacks
-        // ERC-20 metadata (or the call reverts).
+        // ERC-20 metadata (the call reverts or returns an empty string).
         string memory derivedName = name;
         string memory derivedSymbol = symbol;
         try IERC20Metadata(address(underlying)).name() returns (string memory n) {
-            derivedName = n;
+            if (bytes(n).length > 0) derivedName = n;
         } catch {}
         try IERC20Metadata(address(underlying)).symbol() returns (string memory s) {
-            derivedSymbol = s;
+            if (bytes(s).length > 0) derivedSymbol = s;
         } catch {}
 
         ERC8056PairWrapper wrapper = new ERC8056PairWrapper(underlying, scaledUnderlying, derivedName, derivedSymbol);

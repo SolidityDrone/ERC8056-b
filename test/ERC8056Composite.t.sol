@@ -892,6 +892,58 @@ contract ERC8056CompositeTest is ScalingTestBase {
         assertEq(upgraded.uiMultiplier(), 4 * NEUTRAL);
     }
 
+    /// @dev Regression: on a freshly-upgraded proxy (empty checkpoint history),
+    ///      nonce 0 must resolve to a synthetic neutral genesis event instead of
+    ///      reverting `EventNotRecorded` — otherwise degenerate wrapper windows
+    ///      (0,0) brick funds.
+    function test_UpgradeFromVanilla_ClassEventAtNonceZero_SyntheticGenesis() public {
+        ERC1967Proxy proxy = new ERC1967Proxy(address(new ERC8056("v", "V", owner)), "");
+        vm.store(address(proxy), bytes32(uint256(5)), bytes32(uint256(uint160(owner))));
+        address compositeImpl = address(new ERC8056Composite("v", "V", owner));
+        vm.store(address(proxy), IMPL_SLOT, bytes32(uint256(uint160(compositeImpl))));
+        ERC8056Composite upgraded = ERC8056Composite(address(proxy));
+
+        assertEq(upgraded.scalingHistoryLength(MultiplierClass.Yield), 0);
+
+        IERC8056Composite.ClassScalingEvent memory ev = upgraded.classEventAtNonce(MultiplierClass.Yield, 0);
+        assertEq(ev.timestamp, 0);
+        assertEq(ev.cumulativeMultiplier, NEUTRAL);
+        assertEq(ev.multiplierRatio, 0);
+
+        // per-class nonce-0 read also stays neutral instead of reverting
+        assertEq(upgraded.uiMultiplierAtNonce(MultiplierClass.Yield, 0), NEUTRAL);
+        // non-zero nonces still revert on empty history
+        vm.expectRevert(ERC8056Composite.EventNotRecorded.selector);
+        upgraded.classEventAtNonce(MultiplierClass.Yield, 1);
+    }
+
+    /// @dev Regression: the composite-at-nonce composition can mix extreme factors
+    ///      from different eras; it must saturate at type(uint256).max rather than
+    ///      panic-overflowing, while the live composite path keeps exact math.
+    function test_UiMultiplierAtNonce_SaturatesInsteadOfReverting() public {
+        // era 1: Supply = 1e38
+        _scheduleScalingFactor(MultiplierClass.Supply, 1e38, block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 2 hours);
+        // era 2: markdown Supply to 1
+        _scheduleScalingFactor(MultiplierClass.Supply, 1, block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 2 hours);
+        // grow Yield to 1e58: composite of era-1 Supply with Yield overflows
+        _scheduleScalingFactor(MultiplierClass.Yield, 1e58, block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 2 hours);
+
+        assertEq(token.getClassNonce(MultiplierClass.Supply), 2);
+        assertEq(token.getClassNonce(MultiplierClass.Yield), 1);
+
+        // era 1: Supply 1e38 x Yield 1e58 x Other 1e18 overflows -> saturated
+        assertEq(token.uiMultiplierAtNonce(1), type(uint256).max);
+        // era 2 (current): Supply 1 -> composite exactly representable
+        // (1 * 1e58 * 1e18 / 1e36 = 1e40)
+        assertEq(token.uiMultiplierAtNonce(2), 1e40);
+        assertEq(token.uiMultiplierAtNonce(99), token.uiMultiplier());
+        // live path unaffected: active Supply is 1, so composite is exact
+        assertEq(token.uiMultiplier(), 1e40);
+    }
+
     //==============================================================================//
     // Schedule-time composite overflow guard                                       //
     //==============================================================================//

@@ -100,6 +100,18 @@ contract ERC8056PairWrapperRegistryTest is ScalingTestBase {
         assertEq(w.assetSymbol(), "FBN", "falls back to supplied symbol");
     }
 
+    /// @dev An underlying whose name()/symbol() return EMPTY strings (not reverting)
+    ///      must also trigger the fallback, otherwise wrapper metadata is blank.
+    function test_DeployOrGet_FallsBackToSuppliedStrings_WhenUnderlyingMetadataEmpty() public {
+        EmptyMetadataComposite empty = new EmptyMetadataComposite();
+
+        IERC8056PairWrapper w =
+            registry.deployOrGet(IERC20(address(empty)), IERC8056Composite(address(empty)), "Fallback Name", "FBN");
+
+        assertEq(w.assetName(), "Fallback Name", "empty name treated as absent -> fallback");
+        assertEq(w.assetSymbol(), "FBN", "empty symbol treated as absent -> fallback");
+    }
+
     function test_DeployedWrapper_IsUsable() public {
         IERC8056PairWrapper w = registry.deployOrGet(IERC20(address(underlying)), underlying, "Tesla", "Tesla");
 
@@ -141,5 +153,21 @@ contract BogusToken {
 contract MetadatalessComposite {
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC8056Composite).interfaceId;
+    }
+}
+
+/// @dev Same as MetadatalessComposite but name()/symbol() EXIST and return empty
+///      strings instead of reverting.
+contract EmptyMetadataComposite {
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC8056Composite).interfaceId;
+    }
+
+    function name() external pure returns (string memory) {
+        return "";
+    }
+
+    function symbol() external pure returns (string memory) {
+        return "";
     }
 }

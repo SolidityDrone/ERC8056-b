@@ -158,7 +158,7 @@ but a few base-interface reads/writes have composite semantics:
 | 2 | Base `newUIMultiplier()` | the single pending multiplier | product over classes with a **live pending announcement**; active factors otherwise — i.e. the composite once every pending update lands |
 | 3 | Base `effectiveAt()` | the single pending effective timestamp | earliest pending `effectiveAt` across classes; if none is live, the most recent effective event timestamp (`0` only if nothing was ever scheduled) |
 | 4 | Base cancel (`cancelPendingUIMultiplier()`) | cancels the single pending update | reverts `"ERC8056: use class-based cancel"` — cancel requires a class via `IERC8056Composite.cancelPendingUIMultiplier(MultiplierClass)` |
-| 5 | Composite-at-nonce `uiMultiplierAtNonce(n)` | n/a (new view) | per-class clamping: each class uses `min(nonce, classNonce)`, `0 → 1e18`; never reverts for large nonces and converges to `uiMultiplier()` |
+| 5 | Composite-at-nonce `uiMultiplierAtNonce(n)` | n/a (new view) | per-class clamping: each class uses `min(nonce, classNonce)`, `0 → 1e18`; saturates at `type(uint256).max` instead of reverting for extreme factors or large nonces; converges to `uiMultiplier()` |
 
 ## License
 
