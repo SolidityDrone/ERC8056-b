@@ -34,8 +34,8 @@ Lending, options, and auction protocols work by separating a token's
 - An option writer sells the *yield upside*.
 - An auction sells rights to future distributions.
 
-To split a token into a `CapitalToken` (claims the frozen principal share) and
-a `YieldToken` (claims the frozen coupon), the contract must know **which part
+To split a token into a `LegToken` (claims the frozen principal share) and
+a `LegToken` (claims the frozen coupon), the contract must know **which part
 of the multiplier change is yield vs supply**, across a specific window. With a
 single `uiMultiplier`, that split is impossible — you cannot attribute a 2x move
 between principal and yield, or freeze a window's payout, without knowing why
@@ -65,7 +65,7 @@ Once classes exist:
 With a capital/yield split that is precise and event-accurate, protocols can
 build on RWA without trusting a single scalar:
 
-- **Lending** — lend `CapitalToken`, accrue and sell `YieldToken` as interest.
+- **Lending** — lend `LegToken`, accrue and sell `LegToken` as interest.
 - **Options** — write the yield coupon as the option's underlying upside.
 - **Auctions** — auction the right to a window's future distributions.
 - **Any** application that needs to separate "I own the asset" from "I own its

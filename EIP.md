@@ -344,7 +344,7 @@ Where `coupon = max(1 - Y_start / Y_target, 0)` in 1e18 fixed point, frozen at h
 
 ## Backwards Compatibility
 
-This EIP extends ERC-8056. It does not modify the existing `IERC8056`, `IScaledUIAmountConversion`, `IScaledUIAmountBalances`, or `IScaledUIAmountNewUIMultiplier` interfaces. Contracts that implement only the base ERC-8056 interfaces remain compliant.
+This EIP extends ERC-8056. It does not modify the existing `IERC8056`, `IERC8056Conversion`, `IERC8056Balances`, or `IERC8056NewUIMultiplier` interfaces. Contracts that implement only the base ERC-8056 interfaces remain compliant.
 
 The `IERC8056Composite` interface is additive. The composite `uiMultiplier()` function retains its signature and semantics -- it is simply derived from three class factors instead of a stored scalar. Off-chain consumers that read `uiMultiplier()` see no difference.
 
