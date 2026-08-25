@@ -1,6 +1,6 @@
 # TECHNICAL SPEC
 
-This document is the full technical treatment of the EIP-8056 improvement:
+This document is the full technical treatment of the ERC-8056 improvement:
 (1) the class-decomposed extension and what it solves, (2) the nonce-based
 expiry mechanics and why they beat time-based expiry, and (3) the protocol
 use cases the design enables.
@@ -12,17 +12,34 @@ use cases the design enables.
 ### 1.1 What it adds
 
 The extension (`IERC8056Composite`, implemented by `ERC8056Composite`)
-keeps every EIP-8056 function untouched and adds:
+keeps every ERC-8056 function untouched and adds:
 
 - **A named scaling-class enum** `MultiplierClass { Supply, Yield, Other }`.
   Backward compatible: `Supply = 0`, `Yield = 1`, `Other = 2` appended.
 - **Per-class cumulative factors.** `uiScalingFactor(class)` and
   `uiScalingFactorAt(class, ts)` read a class factor; the composite
   `uiMultiplier() = Supply × Yield × Other` (canonical `composeUiMultiplier`).
-- **Scheduled (pending) updates per class.** `setUIMultiplier(class, multiplier,
-  ts)` schedules an absolute multiplier. Nothing activates before
-  `effectiveAt` — a pending update does not move today's multiplier.
-- **Cancel pending updates.** `cancelPendingUIMultiplier(class)` removes a
+- **Scheduled (pending) updates per class.**
+  `setUIMultiplier(class, newMultiplier, effectiveAtTimestamp, id, description, uri)`
+  schedules an absolute multiplier together with **announcement metadata**:
+  an off-chain identifier (`id`), a human-readable `description`, and a
+  `uri` pointing at supporting documents. Scheduling emits
+
+  ```solidity
+  event UIScalingFactorUpdated(
+      MultiplierClass indexed scalingClass,
+      uint256 newMultiplier,
+      uint256 multiplierRatio,
+      uint256 effectiveAtTimestamp,
+      uint256 classNonce,
+      Announcement announcement   // struct { string id; string description; string uri; }
+  );
+  ```
+
+  plus the base `UIMultiplierUpdated` carrying the projected pending
+  composite. Nothing activates before `effectiveAtTimestamp` — a pending
+  update does not move today's multiplier.
+- **Cancel pending updates per class.** `cancelPendingUIMultiplier(class)` removes a
   pending update, restoring the active factor. Emits `UIMultiplierCancelled`
   (base) and `UIScalingFactorCancelled` (extension). Reverts with
   `NothingToCancel()` if no pending update exists.
@@ -33,7 +50,7 @@ keeps every EIP-8056 function untouched and adds:
 
 ### 1.2 What it solves
 
-The single-multiplier EIP-8056 cannot tell a split from a dividend. The
+The single-multiplier ERC-8056 cannot tell a split from a dividend. The
 extension makes the **cause** explicit and **priced**:
 
 | Class | Meaning | Backing effect | Wrapper role |
@@ -77,9 +94,10 @@ ERC-20-interoperable use.
 Two equally valid integration paths:
 
 1. **Standalone wrapper (this repo).** `ERC8056PairWrapper` holds raw RWA and
-   mints `LegToken` / `LegToken` pairs against the extension's yield
+   mints a Capital LegToken and a Yield LegToken (one shared `LegToken`
+   contract, deployed twice per window) against the extension's yield
    history. Clean separation, keeps the base token minimal, and lets *any*
-   EIP-8056-compatible issuer opt in without changing their token.
+   ERC-8056-compatible issuer opt in without changing their token.
 2. **In-ERC integration.** The wrapping could be folded directly into the
    token (mint Capital/Yield on the same contract). Simpler deployment, but
    couples the base token to the wrapper's pairing and expiry logic.
@@ -157,11 +175,14 @@ Key properties:
 
 Because yield arrives as discrete events, the contract must learn *when* an
 event lands. That is the **central authority (CA) push** — the issuer (or a
-designated keeper) calls `setUIMultiplier(MultiplierClass.Yield, newMultiplier, ts)`
-when a dividend is distributed. The nonce ticks when that pushed update becomes
-**effective** (its `effectiveAt` is reached), not at the moment of the call.
+designated keeper) calls
+`setUIMultiplier(MultiplierClass.Yield, newMultiplier, effectiveAtTimestamp, id, description, uri)`
+when a dividend is distributed (the `id`/`description`/`uri` fields carry the
+announcement metadata for that dividend). The nonce ticks when that pushed
+update becomes **effective** (`effectiveAtTimestamp` is reached), not at the
+moment of the call.
 This is the trusted source of truth for "a yield event happened," just as the
-issuer is the source of truth for the UI multiplier itself in EIP-8056.
+issuer is the source of truth for the UI multiplier itself in ERC-8056.
 
 The nonce gives the wrapper a **nonce-to-nonce window reference** — an asset is
 wrapped against `(startNonce, targetNonce)`, so the window is defined by real
@@ -197,13 +218,15 @@ exceed `rawLocked`.
 
 With a precise, event-accurate Capital/Yield split, protocols can treat RWA like
 any composable ERC-20 pair. The wrapper mints two fungible, transferable,
-ERC-20 tokens per window — `LegToken` and `LegToken` — that protocols can
-plug into existing rails.
+ERC-20 tokens per window — a **Capital LegToken** (principal share) and a
+**Yield LegToken** (coupon share), both instances of one shared `LegToken`
+contract deployed twice — that protocols can plug into existing rails.
 
 ### 3.1 Lending
 
-- **Lend the principal, keep the yield.** A lender deposits `LegToken`
-  (claims principal) and accrues/sells `LegToken` as the interest leg.
+- **Lend the principal, keep the yield.** A lender deposits the Capital
+  LegToken (claims principal) and accrues/sells the Yield LegToken as the
+  interest leg.
 - The stable, principal-protected nature of the capital leg (`share = 1 - coupon`,
   floor at 1x when `Y_t <= Y_s`) makes it a conservative lending collateral.
 - The yield leg is a clean "income asset" that can be transferred, priced, or
@@ -211,8 +234,8 @@ plug into existing rails.
 
 ### 3.2 Options
 
-- **Write the yield upside.** An option can be collateralized with the
-  `LegToken` — the payoff is literally the window's accrued yield.
+- **Write the yield upside.** An option can be collateralized with the Yield
+  LegToken — the payoff is literally the window's accrued yield.
 - Because the yield coupon is **frozen and deterministic** once the target nonce
   is reached, options can be priced and settled against a known payoff, not a
   fluctuating current multiplier.
@@ -220,8 +243,8 @@ plug into existing rails.
 
 ### 3.3 Auctions
 
-- **Auction future distributions.** A window's `LegToken` (the right to that
-  window's coupon) is a natural auction lot: "who pays for this window's
+- **Auction future distributions.** A window's Yield LegToken (the right to
+  that window's coupon) is a natural auction lot: "who pays for this window's
   yield?"
 - Windows are fungible within the same `(start, target)` nonce pair, so lots can
   be aggregated and cleared cleanly.
@@ -237,9 +260,64 @@ is sound and composable.
 
 ---
 
+## Part 4 — Migration & Deployment guide
+
+### 4.1 Deploying a composite token fresh
+
+1. Deploy `ERC8056Composite(name, symbol, initialOwner)` directly. The
+   constructor seeds every class with a genesis checkpoint
+   (`effectiveAt = 0`, `cumulativeMultiplier = 1e18`) and emits the initial
+   `UIMultiplierUpdated`.
+2. Hand `initialOwner` to a timelock / multisig (see §4.3) before any
+   `setUIMultiplier` call is expected.
+3. Verify ERC-165: the contract reports `IERC8056Composite`,
+   `IERC8056NewUIMultiplier` (`0x4bd27648`), `IERC8056Cancel`, and the other
+   base ERC-8056 interface IDs.
+4. Optional: register the asset with `ERC8056PairWrapperRegistry.deployOrGet`
+   to create its canonical Capital/Yield wrapper.
+
+### 4.2 Upgrading a live vanilla ERC-8056 beacon proxy
+
+An upgraded proxy needs **no initialization transaction** thanks to *lazy
+genesis*: the first `setUIMultiplier` on each class synthesizes that class's
+genesis checkpoint on the fly.
+
+1. **Verify storage layout compatibility.** `ERC8056Composite` inherits
+   `ERC8056` and appends all class state after the base layout; the base
+   slots (`_uiMultiplier`, `_newUIMultiplier`, `_effectiveAt`) are preserved
+   but unused. Confirm with `forge inspect ERC8056Composite storage-layout`
+   that the base slots are unchanged for your deployed vanilla version.
+2. **Point the beacon at the new implementation.** Standard beacon upgrade;
+   no init call is required or expected.
+3. **Done — but note the post-upgrade view semantics:**
+   - `scalingHistoryLength(class)` returns **0** until the first schedule on
+     that class bootstraps genesis.
+   - All factor reads still return `1e18` (the composite stays correct via
+     history-derived active factors).
+4. After the first schedule per class, indexing matches direct deploys
+   exactly.
+
+### 4.3 Issuer operational guidance
+
+- **Put `setUIMultiplier` behind a timelock.** Schedules are future-effective
+  by design; routing them through a timelock gives holders advance,
+  on-chain-visible notice and makes the announcement window auditable. A
+  delay of at least one settlement cycle is recommended for Yield-class
+  pushes, since windows price against these events.
+- **Announcement metadata discipline.** Always populate `id`, `description`,
+  and `uri` in the 6-arg setter. `id` should be stable and unique per event
+  (e.g. the dividend record date); `uri` should point to the press release or
+  ledger document. Empty fields are legal (the legacy 2-arg path emits them)
+  but degrade off-chain attribution and audit trails.
+- **Class hygiene.** Only Yield-class updates tick the wrapper's yield nonce
+  and move coupons; keep splits and re-denominations strictly in Supply so
+  capital legs stay principal-flat.
+
+---
+
 ## Appendix — glossary
 
-- **UI multiplier** — EIP-8056's display scale (1e18 = 1.0x). Converts raw units
+- **UI multiplier** — ERC-8056's display scale (1e18 = 1.0x). Converts raw units
   to UI units.
 - **Scaling class** — a named reason for scaling: `Supply`, `Yield`, `Other`.
 - **Checkpoint** — `{effectiveAt, cumulativeMultiplier, multiplierRatio}`, one per class per update.

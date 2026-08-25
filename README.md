@@ -1,17 +1,17 @@
 # ERC-8056 Improvement: Class-Decomposed UI Scaling & Capital/Yield Wrapping
 
-A Foundry (Solidity 0.8.24) reference implementation of an **EIP-8056
+A Foundry (Solidity 0.8.24) reference implementation of an **ERC-8056
 improvement** that decomposes UI scaling into named classes and uses that
 decomposition to split an RWA token into **Capital** and **Yield** ERC-20 legs
 with nonce-based (event-based) expiration.
 
-- [`ERC8056`](src/ERC8056.sol) — the base EIP-8056 reference implementation (single composite multiplier).
+- [`ERC8056`](src/ERC8056.sol) — the base ERC-8056 reference implementation (single composite multiplier).
 - [`ERC8056Composite`](src/ERC8056Composite.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and a per-class checkpoint history that also serves as the yield-event log.
-- [`ERC8056PairWrapper`](src/wrapper/ERC8056PairWrapper.sol) — a standalone wrapper (WETH-for-ETH-style, i.e. a separate adapter contract rather than folded into the base token) that splits raw RWA into per-window `LegToken` / `LegToken` ERC-20 pairs with frozen-delta, nonce-gated redemption. Protocols integrate against the stable [`IERC8056PairWrapper`](src/wrapper/interfaces/IERC8056PairWrapper.sol) surface, discovered via the canonical [`ERC8056PairWrapperRegistry`](src/wrapper/ERC8056PairWrapperRegistry.sol) — see [INTEGRATION](docs/INTEGRATION.md).
+- [`ERC8056PairWrapper`](src/wrapper/ERC8056PairWrapper.sol) — a standalone wrapper (WETH-for-ETH-style, i.e. a separate adapter contract rather than folded into the base token) that splits raw RWA into a Capital LegToken and a Yield LegToken (one shared `LegToken` contract, deployed twice per window) with frozen-delta, nonce-gated redemption. Protocols integrate against the stable [`IERC8056PairWrapper`](src/interfaces/wrapper/IERC8056PairWrapper.sol) surface, discovered via the canonical [`ERC8056PairWrapperRegistry`](src/wrapper/ERC8056PairWrapperRegistry.sol) — see [INTEGRATION](docs/INTEGRATION.md).
 
 ## Why this exists
 
-EIP-8056 adjusts a single UI multiplier, so the **reason** for a change is
+ERC-8056 adjusts a single UI multiplier, so the **reason** for a change is
 indistinguishable: a 2-for-1 split (supply change) and a dividend reinvestment
 (yield accretion) both move the same number. That makes it impossible to split
 a token into principal + yield on-chain, which is exactly what lending,
@@ -64,14 +64,15 @@ of 100 handler calls (~70 s) and is configured in `foundry.toml`.
 .
 ├── foundry.toml                    # build/test/invariant config (solc 0.8.24)
 ├── src/
-│   ├── ERC8056.sol                 # base EIP-8056 reference implementation
+│   ├── ERC8056.sol                 # base ERC-8056 reference implementation
 │   ├── ERC8056Composite.sol        # class-decomposed extension
 │   ├── interfaces/
 │   │   ├── base/                   # base ERC-8056 interfaces
 │   │   │   ├── IERC8056.sol        # core 8056 interface
 │   │   │   ├── IERC8056Conversion.sol  # toUIAmount/fromUIAmount
 │   │   │   ├── IERC8056Balances.sol    # balanceOfUI/totalSupplyUI
-│   │   │   └── IERC8056NewUIMultiplier.sol # newUIMultiplier/effectiveAt/cancelPendingUIMultiplier
+│   │   │   ├── IERC8056NewUIMultiplier.sol # newUIMultiplier/effectiveAt (spec ID 0x4bd27648)
+│   │   │   └── IERC8056Cancel.sol      # cancelPendingUIMultiplier/UIMultiplierCancelled
 │   │   ├── extension/              # extension-only interfaces
 │   │   │   ├── IERC8056Composite.sol   # class extension interface
 │   │   │   └── IERC8056MultiplierClass.sol # enum { Supply, Yield, Other }
@@ -103,20 +104,24 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 
 ## Interface surface
 
-### Legacy EIP-8056 (unchanged)
+### Legacy ERC-8056
 
 | Interface | Methods |
 |-----------|---------|
 | `IERC8056` | `uiMultiplier()`, `UIMultiplierUpdated`, `TransferWithUIAmount` |
-| `IERC8056NewUIMultiplier` | `newUIMultiplier()`, `effectiveAt()`, `cancelPendingUIMultiplier()` |
+| `IERC8056NewUIMultiplier` | `newUIMultiplier()`, `effectiveAt()` (spec ID `0x4bd27648`, unchanged from vanilla ERC-8056) |
+| `IERC8056Cancel` | `cancelPendingUIMultiplier()`, `UIMultiplierCancelled` (split out of `IERC8056NewUIMultiplier`) |
 | `IERC8056Conversion` | `toUIAmount(uint256)`, `fromUIAmount(uint256)` |
 | `IERC8056Balances` | `balanceOfUI(address)`, `totalSupplyUI()` |
+
+> **Note:** the composite implementation overrides the base reads with
+> composite semantics — see [Deviations](#deviations-from-vanilla-erc-8056).
 
 ### Extension (class decomposition)
 
 | Interface | Methods |
 |-----------|---------|
-| `IERC8056Composite` | per-class `uiScalingFactor*`, `uiMultiplierAt`, pending/history views, `getClassNonce(MultiplierClass.Yield)`, `classEventAtNonce(MultiplierClass.Yield, nonce)`, `setUIMultiplier` |
+| `IERC8056Composite` | per-class `uiScalingFactor*`, `uiMultiplierAt` overloads, `uiMultiplierAtNonce` overloads, pending/history views, `getClassNonce(MultiplierClass)`, `classEventAtNonce(MultiplierClass, uint256)`, 6-arg `setUIMultiplier(class, newMultiplier, effectiveAtTimestamp, id, description, uri)`, `cancelPendingUIMultiplier(MultiplierClass)` |
 | `ERC8056Composite` | per-class `toUIAmount(raw, class)`, `toUIAmountAt`, `fromUIAmount` |
 | `UIScalingMath` | `composeUiMultiplier(Supply, Yield, Other)` |
 
@@ -124,7 +129,7 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 
 | Interface | Methods |
 |-----------|---------|
-| `IERC8056PairWrapper` | `wrap`, `unwrap`/`unwrapYield`/`unwrapCapital`, `pairs`/`capitalToken`/`yieldToken`, `couponOf`/`capitalShareOf`, previews, supplies, `currentNonce`, `rawLocked`/`rawLockedOf` |
+| `IERC8056PairWrapper` | `wrap`, `unwrap`/`unwrapYield`/`unwrapCapital`, `pairs`/`capitalToken`/`yieldToken`, `couponOf`/`capitalShareOf`, previews, per-window supplies, `currentNonce`, `windowBackingOf`, `rawLocked()`/`rawLockedOf` (deprecated) |
 | `IERC8056PairWrapperRegistry` | `deployOrGet`, `wrapperFor`, `wrapperCount`/`wrapperAt`, `underlyingOf` |
 
 See [INTEGRATION](docs/INTEGRATION.md) for the full consumer guide.
@@ -142,6 +147,19 @@ the target nonce from historical checkpoints only. Because `coupon + share = 1`,
 every pair's total claim equals its deposit and the shared raw vault stays
 solvent by construction.
 
+## Deviations from vanilla ERC-8056
+
+The composite implementation keeps every vanilla ERC-8056 interface ID intact,
+but a few base-interface reads/writes have composite semantics:
+
+| # | Deviation | Vanilla behavior | This implementation |
+|---|-----------|------------------|---------------------|
+| 1 | Legacy 2-arg `setUIMultiplier(uint256,uint256)` | writes dead single-multiplier storage | delegates to the **Supply** class; emits both `UIScalingFactorUpdated` (empty announcement fields) and `UIMultiplierUpdated` |
+| 2 | Base `newUIMultiplier()` | the single pending multiplier | product over classes with a **live pending announcement**; active factors otherwise — i.e. the composite once every pending update lands |
+| 3 | Base `effectiveAt()` | the single pending effective timestamp | earliest pending `effectiveAt` across classes; if none is live, the most recent effective event timestamp (`0` only if nothing was ever scheduled) |
+| 4 | Base cancel (`cancelPendingUIMultiplier()`) | cancels the single pending update | reverts `"ERC8056: use class-based cancel"` — cancel requires a class via `IERC8056Composite.cancelPendingUIMultiplier(MultiplierClass)` |
+| 5 | Composite-at-nonce `uiMultiplierAtNonce(n)` | n/a (new view) | per-class clamping: each class uses `min(nonce, classNonce)`, `0 → 1e18`; never reverts for large nonces and converges to `uiMultiplier()` |
+
 ## License
 
-[MIT](LICENSE) — fully open source.
+Code: [MIT](LICENSE) · Specification text: [CC0](LICENSE-CC0).

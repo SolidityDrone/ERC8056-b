@@ -43,7 +43,7 @@ Lending, options, and auction protocols work by separating a token's **principal
 - An option writer sells the *yield upside*.
 - An auction sells rights to future distributions.
 
-To split a token into a `LegToken` (claims the frozen principal share) and a `LegToken` (claims the frozen coupon), the contract must know **which part of the multiplier change is yield vs supply**, across a specific window. With a single `uiMultiplier`, that split is impossible -- you cannot attribute a 2x move between principal and yield, or freeze a window's payout, without knowing why each change happened and when.
+To split a token into a Capital LegToken and a Yield LegToken (one shared `LegToken` contract, deployed twice per window — the capital leg claims the frozen principal share, the yield leg the frozen coupon), the contract must know **which part of the multiplier change is yield vs supply**, across a specific window. With a single `uiMultiplier`, that split is impossible -- you cannot attribute a 2x move between principal and yield, or freeze a window's payout, without knowing why each change happened and when.
 
 On-chain tokenized RWA -- such as Robinhood Chain stock tokens -- currently expose only a scalar multiplier with no class attribution and no history to price a window against. The Capital/Yield split is therefore not doable.
 
@@ -74,11 +74,11 @@ The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" in this docu
 
 This EIP extends ERC-8056 with a **class-decomposed scaling layer**. It adds:
 
-1. A **scaling-class enum** `MultiplierClass` with three values: `Supply`, `Yield`, `Other`.
-2. Per-class **cumulative factors** replacing the single `uiMultiplier` with three independent factor series.
-3. Per-class **checkpoint histories** recording every effective update.
-4. A **yield-event log** derived from the `Yield` checkpoint history, expressed as a nonce sequence.
-5. **Scheduled (pending) updates** per class, with explicit activation timestamps.
+- A **scaling-class enum** `MultiplierClass` with three values: `Supply`, `Yield`, `Other`.
+- Per-class **cumulative factors** replacing the single `uiMultiplier` with three independent factor series.
+- Per-class **checkpoint histories** recording every effective update.
+- A **yield-event log** derived from the `Yield` checkpoint history, expressed as a nonce sequence.
+- Scheduled (pending) updates per class, with explicit activation timestamps.
 
 The composite `uiMultiplier()` is always the product of every class factor. There is no generic monolithic multiplier setter -- every update MUST specify a class. This guarantees the class decomposition can never drift out of sync with the displayed multiplier.
 
@@ -134,11 +134,38 @@ interface IERC8056Composite {
         Announcement announcement
     );
 
+    event UIScalingFactorCancelled(
+        MultiplierClass indexed scalingClass,
+        uint256 previousMultiplier,
+        uint256 restoredMultiplier,
+        uint256 cancelledAtTimestamp
+    );
+
     // ---- Per-class factor reads ----
 
     function uiScalingFactor(MultiplierClass scalingClass) external view returns (uint256);
     function uiScalingFactorAt(MultiplierClass scalingClass, uint256 timestamp) external view returns (uint256);
+
+    // ---- Base ERC-8056 naming overloads ----
+
+    // Composite multiplier at `timestamp` = product of all class factors at that time.
     function uiMultiplierAt(uint256 timestamp) external view returns (uint256);
+
+    // Cumulative multiplier for a single class at `timestamp`.
+    function uiMultiplierAt(MultiplierClass scalingClass, uint256 timestamp) external view returns (uint256);
+
+    // Current cumulative multiplier for a single class (alias for uiScalingFactor).
+    function uiMultiplier(MultiplierClass scalingClass) external view returns (uint256);
+
+    // ---- Nonce-based reads ----
+
+    // Composite multiplier as of the era opened by the n-th event of any class.
+    // Per class the nonce is clamped to the class's current nonce, so classes
+    // with fewer events contribute their latest factor (never reverts).
+    function uiMultiplierAtNonce(uint256 nonce) external view returns (uint256);
+
+    // Cumulative multiplier for a single class at a past nonce (1-based).
+    function uiMultiplierAtNonce(MultiplierClass scalingClass, uint256 nonce) external view returns (uint256);
 
     // ---- Pending (scheduled) updates ----
 
@@ -154,8 +181,8 @@ interface IERC8056Composite {
 
     // ---- Yield events (derived from Yield checkpoint history) ----
 
-    function getClassNonce(MultiplierClass.Yield) external view returns (uint256);
-    function classEventAtNonce(MultiplierClass.Yield, uint256 nonce) external view returns (ClassScalingEvent memory);
+    function getClassNonce(MultiplierClass scalingClass) external view returns (uint256);
+    function classEventAtNonce(MultiplierClass scalingClass, uint256 nonce) external view returns (ClassScalingEvent memory);
 
     // ---- State-changing: schedule updates ----
 
@@ -167,6 +194,12 @@ interface IERC8056Composite {
         string calldata description,
         string calldata uri
     ) external;
+
+    // ---- State-changing: cancel pending ----
+
+    // Cancels the pending scaling update for `scalingClass`, restoring the
+    // active factor. Reverts if no pending update exists for the class.
+    function cancelPendingUIMultiplier(MultiplierClass scalingClass) external;
 }
 ```
 
@@ -208,14 +241,14 @@ interface IERC8056Composite {
 
 #### Yield-event derivation
 
-16. The yield nonce MUST be derived from the `Yield` checkpoint history: it counts checkpoints with `effectiveAt <= block.timestamp`, excluding the genesis checkpoint (index 0) and any pending (future) updates.
-17. `classEventAtNonce(MultiplierClass.Yield, nonce)` MUST map nonce `n` to checkpoint index `n` (1-based events; genesis is index 0, not an event).
-18. A scheduled-but-not-effective Yield update MUST NOT consume a nonce.
-19. The nonce MUST tick only when a Yield-class update actually becomes effective.
+20. The yield nonce MUST be derived from the `Yield` checkpoint history: it counts checkpoints with `effectiveAt <= block.timestamp`, excluding the genesis checkpoint (index 0) and any pending (future) updates.
+21. `classEventAtNonce(MultiplierClass.Yield, nonce)` MUST map nonce `n` to checkpoint index `n` (1-based events; genesis is index 0, not an event).
+22. A scheduled-but-not-effective Yield update MUST NOT consume a nonce.
+23. The nonce MUST tick only when a Yield-class update actually becomes effective.
 
 #### ERC-165
 
-20. Contracts implementing this extension MUST implement ERC-165 and return `true` for the `IERC8056Composite` interface ID.
+24. Contracts implementing this extension MUST implement ERC-165 and return `true` for the `IERC8056Composite` interface ID.
 
 ### Interface IDs
 
@@ -223,7 +256,18 @@ interface IERC8056Composite {
 |-----------|----|
 | `IERC8056Composite` | computed via `type(IERC8056Composite).interfaceId` |
 
-Implementations that also implement the base ERC-8056 interfaces MUST report those interface IDs via ERC-165 as well.
+Implementations that also implement the base ERC-8056 interfaces MUST report those interface IDs via ERC-165 as well. Note that `IERC8056NewUIMultiplier` retains its vanilla spec ID (`0x4bd27648`) -- cancel has been moved out into the separate optional `IERC8056Cancel` interface, so implementing cancel does not change the pending-multiplier interface ID.
+
+### Deviations from vanilla ERC-8056
+
+The composite implementation keeps every vanilla ERC-8056 interface ID intact, but several base-interface entrypoints take on composite semantics:
+
+- **Legacy 2-arg setter routes to a class.** `setUIMultiplier(uint256 newMultiplier, uint256 effectiveAtTimestamp)` delegates to the **Supply** class (with empty announcement fields), emitting both `UIScalingFactorUpdated` and `UIMultiplierUpdated`. Vanilla ERC-8056 writes a single dead storage slot; writing it silently here would never be observed by any class-derived read.
+- **Composite pending views.** Base `newUIMultiplier()` returns the product over classes of the *pending* factor where a live announcement exists and the active factor otherwise (i.e. the composite once every pending update lands). Base `effectiveAt()` returns the earliest pending `effectiveAt` across classes; if no class has a live announcement it returns the most recent effective event timestamp across classes (`0` only when nothing was ever scheduled) instead of resetting to 0.
+- **Cancel requires a class.** The parameterless `cancelPendingUIMultiplier()` reverts with `"ERC8056: use class-based cancel"`. Cancelling MUST go through `cancelPendingUIMultiplier(MultiplierClass scalingClass)`, which emits both `UIScalingFactorCancelled(scalingClass, ...)` and the base `UIMultiplierCancelled(...)`.
+- **Composite-at-nonce clamping.** `uiMultiplierAtNonce(uint256 nonce)` composes per-class factors at `min(nonce, getClassNonce(class))`, with `nonce 0` contributing `1e18`. It therefore never reverts for arbitrarily large nonces and equals `uiMultiplier()` for any sufficiently large `nonce`. The per-class overload reverts for nonces beyond the class history, as in requirement 21.
+- **Schedule-time overflow guard.** Scheduling a factor whose pending composite would overflow reverts with `CompositeOverflow()` instead of an arithmetic panic.
+
 
 ### No explicit prohibition on additional classes
 
@@ -267,8 +311,9 @@ The full reference implementation is available at [github.com/SolidityDrone/ERC8
 
 - `ERC8056Composite.sol` -- the class-decomposed extension contract.
 - `UIScalingMath.sol` -- canonical composite math library.
-- `IERC8056Composite.sol` -- the extension interface.
+- `IERC8056Composite.sol` -- the extension interface (includes the `Announcement` metadata struct and both scaling events).
 - `IERC8056MultiplierClass.sol` -- the multiplier-class enum.
+- `IERC8056NewUIMultiplier.sol` / `IERC8056Cancel.sol` -- base ERC-8056 interfaces. The pending-multiplier interface keeps only `newUIMultiplier()`/`effectiveAt()` (spec ID `0x4bd27648`, unchanged from vanilla ERC-8056); cancel (`cancelPendingUIMultiplier()` + `UIMultiplierCancelled`) lives in a separate optional `IERC8056Cancel` interface.
 - `ERC8056PairWrapper.sol` -- the Capital/Yield wrapper (reference consumer).
 - `ERC8056PairWrapperRegistry.sol` -- canonical per-asset wrapper discovery.
 - `IERC8056PairWrapper.sol` -- the wrapper integration interface.
@@ -276,12 +321,14 @@ The full reference implementation is available at [github.com/SolidityDrone/ERC8
 ### Extension contract (summary)
 
 ```solidity
-contract ERC8056Composite is ERC20, ERC165, IERC8056Composite, Ownable {
+contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     struct ClassScalingState {
         uint256 activeFactor;
         uint256 pendingFactor;
         uint256 effectiveAt;
     }
+
+    error CompositeOverflow();
 
     mapping(MultiplierClass => ClassScalingState) private _classScaling;
     mapping(MultiplierClass => ScalingCheckpoint[]) private _checkpoints;
@@ -295,45 +342,43 @@ contract ERC8056Composite is ERC20, ERC165, IERC8056Composite, Ownable {
         );
     }
 
-    function uiScalingFactor(MultiplierClass scalingClass) public view returns (uint256) {
-        return uiScalingFactorAt(scalingClass, block.timestamp);
+    // Base-naming overload: per-class cumulative multiplier.
+    function uiMultiplier(MultiplierClass scalingClass) external view returns (uint256) {
+        return uiScalingFactor(scalingClass);
     }
 
     function uiScalingFactorAt(MultiplierClass scalingClass, uint256 timestamp) public view returns (uint256) {
         uint256[] storage timestamps = _checkpointTimestamps[scalingClass];
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
-        uint256 idx = Arrays.lowerBound(timestamps, timestamp);
+        uint256 idx = Arrays.lowerBound(timestamps, timestamp); // O(log n)
         if (idx < history.length && timestamps[idx] == timestamp) {
             return history[idx].cumulativeMultiplier;
         }
         return idx > 0 ? history[idx - 1].cumulativeMultiplier : UIScalingMath.MULTIPLIER_DECIMALS;
     }
 
+    // Derived via binary search (upperBound) over checkpoint timestamps: O(log n).
     function getClassNonce(MultiplierClass scalingClass) public view returns (uint256) {
-        ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
-        uint256 nonce;
-        for (uint256 i = 1; i < history.length; i++) {
-            if (history[i].effectiveAt <= block.timestamp) nonce++;
-            else break;
-        }
-        return nonce;
+        uint256[] storage timestamps = _checkpointTimestamps[scalingClass];
+        if (timestamps.length == 0) return 0; // lazily bootstrapped upgraded proxy
+        return Arrays.upperBound(timestamps, block.timestamp) - 1;
     }
 
-    function classEventAtNonce(MultiplierClass scalingClass, uint256 nonce)
-        public
-        view
-        returns (ClassScalingEvent memory)
-    {
-        // Binary search via Arrays.lowerBound on _checkpointTimestamps
-        // Returns the (nonce+1)th effective checkpoint
-        ...
-    }
-
-    // setUIMultiplier schedules pending updates,
-    // flush any existing pending checkpoint, and emit UIScalingFactorUpdated.
-    // ... (full implementation in reference repo)
+    // setUIMultiplier(scalingClass, newMultiplier, effectiveAtTimestamp, id, description, uri)
+    // validates future-only scheduling, guards against composite overflow
+    // (reverts CompositeOverflow instead of an arithmetic panic), replaces any
+    // live pending checkpoint for the class, synthesizes the genesis entry on
+    // first use (lazy genesis for upgraded proxies), pushes the new checkpoint,
+    // and emits UIScalingFactorUpdated with the Announcement metadata plus the
+    // base UIMultiplierUpdated with the projected pending composite.
 }
 ```
+
+> **Lazy genesis:** an upgraded vanilla ERC-8056 proxy starts with empty
+> checkpoint histories (`scalingHistoryLength(class) == 0`). No initialization
+> transaction is needed — the first `setUIMultiplier` call on each class
+> bootstraps the genesis checkpoint (`effectiveAt = 0`,
+> `cumulativeMultiplier = 1e18`), after which indexing matches direct deploys.
 
 ### Capital/Yield wrapper (practical reference)
 
@@ -348,11 +393,11 @@ Where `coupon = max(1 - Y_start / Y_target, 0)` in 1e18 fixed point, frozen at h
 
 ### Canonical registry
 
-`ERC8056PairWrapperRegistry` enforces singleton semantics: one wrapper per underlying asset. `deployOrGet(underlying, scaledUnderlying, name, symbol)` deploys and caches on first call; returns the existing wrapper on subsequent calls. `scaledUnderlying` MUST equal `underlying` (the RWA token IS the class-decomposed extension), validated via ERC-165.
+`ERC8056PairWrapperRegistry` enforces singleton semantics: one wrapper per underlying asset. `deployOrGet(underlying, scaledUnderlying, name, symbol)` deploys and caches on first call; returns the existing wrapper on subsequent calls. `scaledUnderlying` MUST equal `underlying` (the RWA token IS the class-decomposed extension), validated via ERC-165. The wrapper's display metadata is **derived from the underlying's** `name()`/`symbol()`; the `name`/`symbol` parameters are fallback-only, used when the underlying lacks ERC-20 metadata (calls revert or return empty).
 
 ## Backwards Compatibility
 
-This EIP extends ERC-8056. It does not modify the existing `IERC8056`, `IERC8056Conversion`, `IERC8056Balances`, or `IERC8056NewUIMultiplier` interfaces. Contracts that implement only the base ERC-8056 interfaces remain compliant.
+This EIP extends ERC-8056. It does not modify the existing `IERC8056`, `IERC8056Conversion`, `IERC8056Balances`, or `IERC8056NewUIMultiplier` interfaces. Contracts that implement only the base ERC-8056 interfaces remain compliant. The only reorganization on the base side is that cancel (`cancelPendingUIMultiplier()` / `UIMultiplierCancelled`) moved from `IERC8056NewUIMultiplier` into a separate optional `IERC8056Cancel` interface, leaving the pending-multiplier interface ID (`0x4bd27648`) untouched. Base-interface reads and writes gain composite semantics as described in [Deviations from vanilla ERC-8056](#deviations-from-vanilla-erc-8056); off-chain consumers reading only `uiMultiplier()` see no difference.
 
 The `IERC8056Composite` interface is additive. The composite `uiMultiplier()` function retains its signature and semantics -- it is simply derived from three class factors instead of a stored scalar. Off-chain consumers that read `uiMultiplier()` see no difference.
 

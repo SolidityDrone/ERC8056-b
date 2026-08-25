@@ -1,12 +1,12 @@
 # MOTIVATION
 
-Why an EIP-8056 improvement? Because EIP-8056 as written cannot support
+Why an ERC-8056 improvement? Because ERC-8056 as written cannot support
 principal/yield decomposition, and RWA protocols (lending, options, auctions)
 urgently need it.
 
-## The core limitation of EIP-8056
+## The core limitation of ERC-8056
 
-EIP-8056 exposes a single composite `uiMultiplier`. When the off-chain issuer
+ERC-8056 exposes a single composite `uiMultiplier`. When the off-chain issuer
 updates it, the on-chain token only sees a new number — **not the reason** the
 number changed.
 
@@ -21,7 +21,7 @@ Consider a Robinhood-style stock token tracked off-chain:
 - A **reverse split**, **ADR ratio change**, or **redenomination** are more
   Supply effects with identical multiplier math.
 
-To an EIP-8056 token, all three are indistinguishable: `uiMultiplier` moved from
+To an ERC-8056 token, all three are indistinguishable: `uiMultiplier` moved from
 1.0x to 2.0x. The contract cannot tell a split (everyone's claim is the same
 asset, re-denominated) from a dividend (a *new* yield claim has been created).
 
@@ -34,8 +34,9 @@ Lending, options, and auction protocols work by separating a token's
 - An option writer sells the *yield upside*.
 - An auction sells rights to future distributions.
 
-To split a token into a `LegToken` (claims the frozen principal share) and
-a `LegToken` (claims the frozen coupon), the contract must know **which part
+To split a token into a Capital LegToken and a Yield LegToken (one shared
+`LegToken` contract, deployed twice per window — the capital leg claims the
+frozen principal share, the yield leg the frozen coupon), the contract must know **which part
 of the multiplier change is yield vs supply**, across a specific window. With a
 single `uiMultiplier`, that split is impossible — you cannot attribute a 2x move
 between principal and yield, or freeze a window's payout, without knowing why
@@ -65,7 +66,7 @@ Once classes exist:
 With a capital/yield split that is precise and event-accurate, protocols can
 build on RWA without trusting a single scalar:
 
-- **Lending** — lend `LegToken`, accrue and sell `LegToken` as interest.
+- **Lending** — lend the Capital LegToken, accrue and sell the Yield LegToken as interest.
 - **Options** — write the yield coupon as the option's underlying upside.
 - **Auctions** — auction the right to a window's future distributions.
 - **Any** application that needs to separate "I own the asset" from "I own its

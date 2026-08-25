@@ -7,7 +7,7 @@ that need a **principal leg** and a **yield leg** of the same raw RWA token.
 It defines two stable, optional surfaces (they are reference components of the
 EIP, not separate standards):
 
-1. [`IERC8056PairWrapper`](../src/wrapper/interfaces/IERC8056PairWrapper.sol) — the
+1. [`IERC8056PairWrapper`](../src/interfaces/wrapper/IERC8056PairWrapper.sol) — the
    per-asset singleton wrapper: split, redemption, and pricing.
 2. [`ERC8056PairWrapperRegistry`](../src/wrapper/ERC8056PairWrapperRegistry.sol) — the
    canonical per-asset discovery: one wrapper per raw token, so every protocol
@@ -39,10 +39,10 @@ shared raw vault stays solvent by construction.
    raw RWA
      │  wrap(rawAmount, lockNonces)
      ▼
-  window (startNonce, targetNonce)
-     ├── LegToken  ──► unwrapCapital: raw * (1 - coupon)
-     └── LegToken    ──► unwrapYield:   raw * coupon
-                           (both gated until getClassNonce(MultiplierClass.Yield) >= targetNonce)
+   window (startNonce, targetNonce)
+     ├── Capital LegToken ──► unwrapCapital: raw * (1 - coupon)
+     └── Yield LegToken   ──► unwrapYield:   raw * coupon
+                            (both gated until getClassNonce(MultiplierClass.Yield) >= targetNonce)
 ```
 
 ---
@@ -53,8 +53,8 @@ Protocols should **never** hardcode or guess wrapper addresses. Ask the
 registry instead.
 
 ```solidity
-import {IERC8056PairWrapperRegistry} from "../src/wrapper/interfaces/IERC8056PairWrapperRegistry.sol";
-import {IERC8056PairWrapper} from "../src/wrapper/interfaces/IERC8056PairWrapper.sol";
+import {IERC8056PairWrapperRegistry} from "../src/interfaces/wrapper/IERC8056PairWrapperRegistry.sol";
+import {IERC8056PairWrapper} from "../src/interfaces/wrapper/IERC8056PairWrapper.sol";
 
 IERC8056PairWrapperRegistry registry = /* canonical registry address */;
 
@@ -67,17 +67,23 @@ if (address(w) != address(0)) {
 
 To bootstrap a new asset, call `deployOrGet`. It is **idempotent**: the first
 call for an underlying deploys and caches its singleton wrapper; every later
-call returns the same address. Identity is keyed by `underlying` only — later
-calls with different display `name`/`symbol` are ignored.
+call returns the same address. Identity is keyed by `underlying` only.
 
 ```solidity
 IERC8056PairWrapper w = registry.deployOrGet(
     rawToken,          // IERC20 underlying
     rawToken,          // scaledUnderlying: MUST be the same contract (extension == token)
-    "Tesla",           // display name
-    "Tesla"            // display symbol
+    "Tesla",           // display name  — FALLBACK ONLY
+    "Tesla"            // display symbol — FALLBACK ONLY
 );
 ```
+
+**Derived metadata.** The deployed wrapper's display name/symbol are read from
+the underlying's own ERC-20 `name()`/`symbol()`. The `name`/`symbol` parameters
+are **fallback-only**: they are used solely when the underlying lacks ERC-20
+metadata (`name()`/`symbol()` revert or return empty). For any standard token
+the caller-supplied strings are ignored — this prevents the first registrant
+from squatting misleading metadata on a canonical wrapper.
 
 `deployOrGet` reverts `ExtensionMismatch` if `scaledUnderlying` is not the same
 contract as `underlying`, and `UnsupportedExtension` if that contract does not
@@ -101,8 +107,9 @@ Enumeration and reverse lookup are available:
 
 | Member | Notes |
 |--------|-------|
-| `underlying()` | the raw RWA token that gets locked |
-| `wrap(rawAmount, lockNonces) -> (start, target)` | approve first; mints 1:1 capital+yield; returns the created window |
+| `underlying()` / `scaledUnderlying()` | the raw RWA token that gets locked, and the class-decomposed extension read for history |
+| `assetName()` / `assetSymbol()` | display metadata (derived from the underlying; see §2) |
+| `wrap(rawAmount, lockNonces) -> (start, target)` | approve first; mints 1:1 capital+yield; returns the created window. **Fee-on-transfer tokens are rejected**: if the transfer delivers a different amount than requested, the call reverts `FeeOnTransferNotSupported` |
 | `pairs(start, target) -> Pair{capital, yield}` | both leg addresses for a window |
 | `capitalToken(start,target)` / `yieldToken(start,target)` | explicit leg getters |
 | `hasPair(start,target)` | true if the window was ever created |
@@ -119,7 +126,8 @@ list them on its auction or forward them to a vault.
 | `unwrapYield(amount, start, target)` | burn `amount` yield leg for `amount * coupon` |
 | `unwrapCapital(amount, start, target)` | burn `amount` capital leg for `amount * (1 - coupon)` |
 | `rawLocked()` | total raw underlying locked across all windows |
-| `rawLockedOf(start, target)` | outstanding capital supply of a window (== raw backing before any solo yield redemption) |
+| `windowBackingOf(start, target)` | **truthful** raw backing of one window: pre-maturity (nonce < target) both legs redeem 1:1, so backing = `capitalSupplyOf + yieldSupplyOf`; post-maturity it is frozen at `capitalSupplyOf * capitalShare + yieldSupplyOf * coupon`. 0 for a nonexistent window |
+| `rawLockedOf(start, target)` | **DEPRECATED** — returns the window's outstanding capital supply, which diverges from raw backing after any solo `unwrapYield`. Use `windowBackingOf` instead |
 
 Both solo redemption functions revert `Locked` while `currentNonce() < target`.
 `unwrap` is unconditional — it is the safe exit for any window.
@@ -139,8 +147,8 @@ deterministic and independent of later events.
 | `previewUnwrapYield(amount,start,target)` | underlying for burning `amount` yield leg |
 | `previewUnwrapCapital(amount,start,target)` | underlying for burning `amount` capital leg |
 | `previewCapitalUI(capitalAmount)` | **display only** — composite-UI figure; never a redemption amount |
-| `capitalSupplyOf` / `yieldSupplyOf` | per-window supplies |
-| `capitalSupply()` / `yieldSupply()` | aggregate across all windows |
+| `capitalSupplyOf` / `yieldSupplyOf` | per-window supplies (0 if never created) |
+| `capitalSupply()` / `yieldSupply()` | aggregate across all windows — **OFF-CHAIN ONLY**: these loop over every created window and will exceed block gas limits as window count grows; never call from on-chain protocols |
 
 > **Note on `previewCapitalUI`:** it applies the *live* Supply factor for UI
 > display only. It must never be used as a claim/redeem amount — raw claims are
@@ -152,10 +160,11 @@ deterministic and independent of later events.
 
 ### 4.1 Lending: borrow against a principal leg
 
-1. Borrowers `wrap(rawAmount, lockNonces)` to get a `LegToken` for
+1. Borrowers `wrap(rawAmount, lockNonces)` to get the Capital LegToken for
    window `(s, t)`.
-2. The lending protocol takes the `LegToken` as collateral. It values it
-   via `capitalShareOf(s,t)` (or `previewUnwrapCapital`) rather than the live
+2. The lending protocol takes that LegToken as collateral. It values it via
+   `capitalShareOf(s,t)` — or, for a truthful solvency figure,
+   `windowBackingOf(s,t)` — rather than the live
    multiplier, so collateral is a *known* function of the window.
 3. On liquidation, the protocol `unwrapCapital(collateralAmount, s, t)` — but
    only after `currentNonce() >= t`. Before that it can always `unwrap(...)`
@@ -163,8 +172,7 @@ deterministic and independent of later events.
 
 ### 4.2 Options: exercise value is frozen
 
-1. A call on window `(s, t)` is written against the `LegToken` (upside) and
-   the `LegToken` (downside/floored principal).
+1. A call on window `(s, t)` is written against the Yield LegToken (upside) and the Capital LegToken (downside/floored principal).
 2. Because `couponOf(s,t)` is frozen once `t` is reached, the option's
    settlement value is deterministic on-chain — there is no oracle race on the
    exercise payoff.
@@ -174,7 +182,7 @@ deterministic and independent of later events.
 ### 4.3 Auction: split-and-sell
 
 1. Issuer `wrap(rawAmount, lockNonces)` and reads `pairs(s,t)`.
-2. The `LegToken` and `LegToken` are listed as separate lots with
+2. The Capital LegToken and Yield LegToken are listed as separate lots with
    independent order books — buyers can hold one leg without owning the other.
 3. `unwrap` (both legs) guarantees any holder of the full pair can always exit
    at exactly the deposit, so arbitrageurs keep the two legs near their fair
@@ -207,16 +215,20 @@ window.
   constructing `ERC8056PairWrapper` yourself.
 - **Legs are standard ERC-20.** `Pair` exposes them as `IERC20` to keep the
   interface concrete-token-free; minting/burning is internal to the wrapper.
+  Each `LegToken` inherits its **decimals from the underlying** token, so leg
+  amounts line up 1:1 with raw units regardless of the underlying's precision.
 - **Approvals.** `wrap` pulls `underlying` via `transferFrom` — approve the
-  wrapper (or registry-deployed wrapper) before calling.
+  wrapper (or registry-deployed wrapper) before calling. The transfer is
+  balance-checked: fee-on-transfer (FoT) tokens revert
+  `FeeOnTransferNotSupported`.
 - **One EIP, multiple contracts.** The registry + wrapper are optional consumer
-  surfaces of the same EIP-8056 improvement; the base extension (`ERC8056`)
+  surfaces of the same ERC-8056 improvement; the base extension (`ERC8056`)
   remains the core.
 
 ## 7. References
 
-- Interface: [`IERC8056PairWrapper.sol`](../src/wrapper/interfaces/IERC8056PairWrapper.sol)
-- Registry: [`IERC8056PairWrapperRegistry.sol`](../src/wrapper/interfaces/IERC8056PairWrapperRegistry.sol), [`ERC8056PairWrapperRegistry.sol`](../src/wrapper/ERC8056PairWrapperRegistry.sol)
+- Interface: [`IERC8056PairWrapper.sol`](../src/interfaces/wrapper/IERC8056PairWrapper.sol)
+- Registry: [`IERC8056PairWrapperRegistry.sol`](../src/interfaces/wrapper/IERC8056PairWrapperRegistry.sol), [`ERC8056PairWrapperRegistry.sol`](../src/wrapper/ERC8056PairWrapperRegistry.sol)
 - Implementation: [`ERC8056PairWrapper.sol`](../src/wrapper/ERC8056PairWrapper.sol)
 - Extension: [`IERC8056Composite.sol`](../src/interfaces/extension/IERC8056Composite.sol)
 - Tests: [`ERC8056PairWrapper.t.sol`](../test/ERC8056PairWrapper.t.sol), [`ERC8056PairWrapperRegistry.t.sol`](../test/ERC8056PairWrapperRegistry.t.sol)
