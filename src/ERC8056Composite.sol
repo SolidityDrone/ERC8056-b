@@ -12,6 +12,7 @@ import {IERC8056Cancel} from "./interfaces/base/IERC8056Cancel.sol";
 import {IERC8056Composite} from "./interfaces/extension/IERC8056Composite.sol";
 import {MultiplierClass} from "./interfaces/extension/IERC8056MultiplierClass.sol";
 import {UIScalingMath} from "./libraries/UIScalingMath.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Arrays} from "@openzeppelin/contracts/utils/Arrays.sol";
 import {ERC8056} from "./ERC8056.sol";
 
@@ -32,6 +33,7 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
 
     error EventNotRecorded();
     error EventNotEffective();
+    error CompositeOverflow();
 
     mapping(MultiplierClass => ClassScalingState) private _classScaling;
     mapping(MultiplierClass => ScalingCheckpoint[]) private _checkpoints;
@@ -203,6 +205,15 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         uint256 oldComposite = uiMultiplier();
         uint256 oldMultiplier = uiScalingFactor(scalingClass);
 
+        // Schedule-time guard: reject announcements whose pending composite
+        // would overflow once this class's factor lands. Division-based
+        // detection avoids arithmetic panics inside a state-changing call.
+        // Factors are guaranteed > 0 (genesis is 1e18 and schedules require
+        // positivity), so `withoutClass` cannot revert.
+        uint256 pending = _compositeFromPending();
+        uint256 withoutClass = Math.mulDiv(pending, UIScalingMath.MULTIPLIER_DECIMALS, _pendingFactor(scalingClass));
+        if (withoutClass > type(uint256).max / newMultiplier) revert CompositeOverflow();
+
         if (hasPendingUIMultiplier(scalingClass)) {
             history.pop();
             _checkpointTimestamps[scalingClass].pop();
@@ -220,8 +231,10 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         state.pendingFactor = newMultiplier;
         state.effectiveAt = effectiveAtTimestamp;
 
-        uint256 ratio =
-            oldMultiplier == 0 ? newMultiplier : newMultiplier * UIScalingMath.MULTIPLIER_DECIMALS / oldMultiplier;
+        // `oldMultiplier` derives from checkpoint history and is always > 0:
+        // genesis pushes 1e18 and every schedule requires newMultiplier > 0,
+        // so no zero-branch is needed here.
+        uint256 ratio = newMultiplier * UIScalingMath.MULTIPLIER_DECIMALS / oldMultiplier;
         history.push(ScalingCheckpoint(effectiveAtTimestamp, newMultiplier, ratio));
         _checkpointTimestamps[scalingClass].push(effectiveAtTimestamp);
         uint256 nonce = getClassNonce(scalingClass);

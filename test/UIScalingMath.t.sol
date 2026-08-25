@@ -4,9 +4,14 @@ pragma solidity ^0.8.24;
 import {ScalingTestBase} from "./ScalingTestBase.sol";
 import {UIScalingMath} from "../src/libraries/UIScalingMath.sol";
 
+/// @dev External harness so `vm.expectRevert` can intercept internal-library reverts.
 contract UIScalingMathHarness {
-    function composeFactors(uint256[] memory factors) external pure returns (uint256) {
-        return UIScalingMath.composeFactors(factors);
+    function composeUiMultiplier(uint256 supplyFactor, uint256 yieldFactor, uint256 otherFactor)
+        external
+        pure
+        returns (uint256)
+    {
+        return UIScalingMath.composeUiMultiplier(supplyFactor, yieldFactor, otherFactor);
     }
 }
 
@@ -17,18 +22,18 @@ contract UIScalingMathTest is ScalingTestBase {
         harness = new UIScalingMathHarness();
     }
 
-    function test_composeFactors_neutralAllClasses() public view {
-        uint256[] memory factors = _classFactors(NEUTRAL, NEUTRAL, NEUTRAL);
-        assertEq(harness.composeFactors(factors), NEUTRAL);
+    function test_composeUiMultiplier_neutralAllClasses() public pure {
+        assertEq(UIScalingMath.composeUiMultiplier(NEUTRAL, NEUTRAL, NEUTRAL), NEUTRAL);
     }
 
-    function test_composeFactors_orderIndependent() public view {
-        uint256[] memory supplyFirst = _classFactors(DOUBLE, 3e18, 1.5e18);
-        uint256[] memory yieldFirst = _classFactors(1.5e18, DOUBLE, 3e18);
-        uint256[] memory otherFirst = _classFactors(3e18, 1.5e18, DOUBLE);
-        assertEq(harness.composeFactors(supplyFirst), harness.composeFactors(yieldFirst));
-        assertEq(harness.composeFactors(supplyFirst), harness.composeFactors(otherFirst));
-        assertEq(harness.composeFactors(supplyFirst), 9e18);
+    function test_composeUiMultiplier_orderIndependent() public pure {
+        assertEq(
+            UIScalingMath.composeUiMultiplier(DOUBLE, 3e18, 1.5e18), UIScalingMath.composeUiMultiplier(1.5e18, DOUBLE, 3e18)
+        );
+        assertEq(
+            UIScalingMath.composeUiMultiplier(DOUBLE, 3e18, 1.5e18), UIScalingMath.composeUiMultiplier(3e18, 1.5e18, DOUBLE)
+        );
+        assertEq(UIScalingMath.composeUiMultiplier(DOUBLE, 3e18, 1.5e18), 9e18);
     }
 
     function test_composeUiMultiplier() public pure {
@@ -40,10 +45,9 @@ contract UIScalingMathTest is ScalingTestBase {
         assertEq(UIScalingMath.composeUiMultiplier(DOUBLE, 1.5e18, NEUTRAL), 3e18);
     }
 
-    function test_composeFactors_revertsOnZero() public {
-        uint256[] memory factors = _classFactors(NEUTRAL, 0, NEUTRAL);
+    function test_composeUiMultiplier_revertsOnZero() public {
         vm.expectRevert(UIScalingMath.ZeroFactor.selector);
-        harness.composeFactors(factors);
+        harness.composeUiMultiplier(NEUTRAL, 0, NEUTRAL);
     }
 
     function test_toUIAmount_roundTrip() public pure {
@@ -66,14 +70,13 @@ contract UIScalingMathTest is ScalingTestBase {
         assertEq(UIScalingMath.yieldGrowthSinceStake(NEUTRAL, 3e18), 3e18);
     }
 
-    function _classFactors(uint256 supplyFactor, uint256 yieldFactor, uint256 otherFactor)
-        private
-        pure
-        returns (uint256[] memory factors)
-    {
-        factors = new uint256[](3);
-        factors[0] = supplyFactor;
-        factors[1] = yieldFactor;
-        factors[2] = otherFactor;
+    /// @dev Principal protection: when the yield factor decreased since stake,
+    ///      capitalRaw exceeds rawStaked and the yield leg must saturate to 0
+    ///      instead of panicking on underflow.
+    function test_yieldLegRaw_saturatesToZeroWhenYieldFactorDecreased() public pure {
+        // capitalRaw = 100e18 * 2e18 / 1e18 = 200e18 > rawStaked
+        uint256 capital = UIScalingMath.capitalRaw(RAW_STAKE, DOUBLE, NEUTRAL);
+        assertEq(capital, 200 ether);
+        assertEq(UIScalingMath.yieldLegRaw(RAW_STAKE, capital), 0);
     }
 }

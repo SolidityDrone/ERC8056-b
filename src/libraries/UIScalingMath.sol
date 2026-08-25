@@ -15,26 +15,18 @@ library UIScalingMath {
 
     error ZeroFactor();
 
-    function composeFactors(uint256[] memory factors) internal pure returns (uint256) {
-        uint256 result = MULTIPLIER_DECIMALS;
-        for (uint256 i = 0; i < factors.length; i++) {
-            if (factors[i] == 0) revert ZeroFactor();
-            result = Math.mulDiv(result, factors[i], MULTIPLIER_DECIMALS);
-        }
-        return result;
-    }
-
     /// @dev Composite UI multiplier from all three classes: Supply * Yield * Other.
     function composeUiMultiplier(uint256 supplyFactor, uint256 yieldFactor, uint256 otherFactor)
         internal
         pure
         returns (uint256)
     {
-        uint256[] memory factors = new uint256[](SCALING_CLASS_COUNT);
-        factors[0] = supplyFactor;
-        factors[1] = yieldFactor;
-        factors[2] = otherFactor;
-        return composeFactors(factors);
+        if (supplyFactor == 0 || yieldFactor == 0 || otherFactor == 0) revert ZeroFactor();
+        uint256 result = MULTIPLIER_DECIMALS;
+        result = Math.mulDiv(result, supplyFactor, MULTIPLIER_DECIMALS);
+        result = Math.mulDiv(result, yieldFactor, MULTIPLIER_DECIMALS);
+        result = Math.mulDiv(result, otherFactor, MULTIPLIER_DECIMALS);
+        return result;
     }
 
     function toUIAmount(uint256 rawAmount, uint256 factor) internal pure returns (uint256) {
@@ -56,9 +48,10 @@ library UIScalingMath {
         return Math.mulDiv(rawStaked, yieldFactorAtStake, yieldFactorCurrent);
     }
 
-    /// @dev Raw yield leg (remainder after capital).
+    /// @dev Raw yield leg (remainder after capital). Returns 0 when the yield
+    ///      factor decreased since stake (principal protection).
     function yieldLegRaw(uint256 rawStaked, uint256 capitalRawAmount) internal pure returns (uint256) {
-        return rawStaked - capitalRawAmount;
+        return rawStaked > capitalRawAmount ? rawStaked - capitalRawAmount : 0;
     }
 
     /// @dev Yield-class growth since a stake snapshot (Supply excluded).

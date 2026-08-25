@@ -92,17 +92,11 @@ contract ERC8056 is
     }
 
     function toUIAmount(uint256 rawAmount) public view virtual override returns (uint256) {
-        if (block.timestamp >= _effectiveAt) {
-            return Math.mulDiv(rawAmount, _newUIMultiplier, MULTIPLIER_DECIMALS);
-        }
-        return Math.mulDiv(rawAmount, _uiMultiplier, MULTIPLIER_DECIMALS);
+        return Math.mulDiv(rawAmount, uiMultiplier(), MULTIPLIER_DECIMALS);
     }
 
     function fromUIAmount(uint256 uiAmount) public view virtual override returns (uint256) {
-        if (block.timestamp >= _effectiveAt) {
-            return Math.mulDiv(uiAmount, MULTIPLIER_DECIMALS, _newUIMultiplier);
-        }
-        return Math.mulDiv(uiAmount, MULTIPLIER_DECIMALS, _uiMultiplier);
+        return Math.mulDiv(uiAmount, MULTIPLIER_DECIMALS, uiMultiplier());
     }
 
     function balanceOfUI(address account) public view virtual override returns (uint256) {

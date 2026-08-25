@@ -891,4 +891,51 @@ contract ERC8056CompositeTest is ScalingTestBase {
         assertEq(upgraded.uiScalingFactor(MultiplierClass.Yield), 4 * NEUTRAL);
         assertEq(upgraded.uiMultiplier(), 4 * NEUTRAL);
     }
+
+    //==============================================================================//
+    // Schedule-time composite overflow guard                                       //
+    //==============================================================================//
+    function test_Schedule_CompositeOverflowRevertsCustomErrorNotPanic() public {
+        uint256 huge = 1e38;
+        vm.startPrank(owner);
+        token.setUIMultiplier(MultiplierClass.Supply, huge, block.timestamp + 1 days, "", "", "");
+        token.setUIMultiplier(MultiplierClass.Yield, huge, block.timestamp + 2 days, "", "", "");
+        // pending composite would be 1e38 * 2e38 / 1e18 -> overflow
+        vm.expectRevert(ERC8056Composite.CompositeOverflow.selector);
+        token.setUIMultiplier(MultiplierClass.Other, 2e38, block.timestamp + 3 days, "", "", "");
+        vm.stopPrank();
+    }
+
+    function test_Schedule_OverflowGuardDoesNotBlockReasonableSchedules() public {
+        uint256 effectiveAt = block.timestamp + 1 days;
+        vm.startPrank(owner);
+        token.setUIMultiplier(MultiplierClass.Supply, 10e18, effectiveAt, "", "", "");
+        token.setUIMultiplier(MultiplierClass.Yield, 10e18, effectiveAt, "", "", "");
+        vm.stopPrank();
+        assertEq(token.newUIMultiplier(), 100e18);
+    }
+
+    function test_fuzz_Conversion_RoundTrip(uint256 x, uint256 factor) public pure {
+        x = bound(x, 0, 1e30);
+        // factor <= MULTIPLIER_DECIMALS guarantees a <= 1 wei round-trip loss:
+        // raw = floor(x*D/f), back = floor(raw*f/D); combined error < f/D <= 1
+        factor = bound(factor, 1, NEUTRAL);
+        uint256 raw = UIScalingMath.fromUIAmount(x, factor);
+        uint256 back = UIScalingMath.toUIAmount(raw, factor);
+        assertLe(back, x);
+        assertLe(x - back, 1);
+    }
+
+    function test_fuzz_TokenConversion_RoundTrip(uint256 x) public {
+        x = bound(x, 0, 1e24);
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Supply, HALF, block.timestamp + 1 hours, "", "", "");
+        vm.warp(block.timestamp + 2 hours);
+        assertEq(token.uiMultiplier(), HALF);
+
+        uint256 raw = token.fromUIAmount(x);
+        uint256 back = token.toUIAmount(raw);
+        assertLe(back, x);
+        assertLe(x - back, 1);
+    }
 }
