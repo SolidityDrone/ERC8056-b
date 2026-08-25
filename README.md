@@ -58,13 +58,6 @@ forge build         # compile
 The invariant suite (solvency, frozen claims, no-stuck-raw) runs 256 sequences
 of 100 handler calls (~70 s) and is configured in `foundry.toml`.
 
-### Deploy
-
-```shell
-forge script script/DeployERC8056.s.sol --rpc-url <RPC> --broadcast
-forge script script/DeployERC8056Composite.s.sol --rpc-url <RPC> --broadcast
-```
-
 ## Layout
 
 ```
@@ -91,7 +84,6 @@ forge script script/DeployERC8056Composite.s.sol --rpc-url <RPC> --broadcast
 │   │   └── LegToken.sol               # fungible ERC-20 receipt (capital or yield leg)
 │   └── libraries/
 │       └── UIScalingMath.sol           # canonical composite math
-├── script/                            # deploy scripts
 ├── test/                              # unit, fuzz, and invariant suites
 ├── docs/
 │   ├── MOTIVATION.md                  # why this proposal exists
