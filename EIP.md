@@ -110,13 +110,13 @@ interface IERC8056Composite {
     struct ScalingCheckpoint {
         uint256 effectiveAt;
         uint256 cumulativeMultiplier;
-        uint256 multiplierDelta;
+        uint256 multiplierRatio;
     }
 
     struct ClassScalingEvent {
         uint256 timestamp;
         uint256 cumulativeMultiplier;
-        uint256 multiplierDelta;
+        uint256 multiplierRatio;
     }
 
     struct Announcement {
@@ -128,7 +128,7 @@ interface IERC8056Composite {
     event UIScalingFactorUpdated(
         MultiplierClass indexed scalingClass,
         uint256 newMultiplier,
-        uint256 multiplierDelta,
+        uint256 multiplierRatio,
         uint256 effectiveAtTimestamp,
         uint256 classNonce,
         Announcement announcement
@@ -186,8 +186,8 @@ interface IERC8056Composite {
 
 #### Checkpoint history
 
-7. Each class MUST maintain an append-only checkpoint history. Each checkpoint MUST record `{effectiveAt, cumulativeMultiplier, multiplierDelta}`.
-8. `scalingCheckpointAt(class, index)` MUST return checkpoint at the given 0-based index, where index 0 is the genesis checkpoint (`effectiveAt = 0`, `cumulativeMultiplier = 1e18`, `multiplierDelta = 0`).
+7. Each class MUST maintain an append-only checkpoint history. Each checkpoint MUST record `{effectiveAt, cumulativeMultiplier, multiplierRatio}`.
+8. `scalingCheckpointAt(class, index)` MUST return checkpoint at the given 0-based index, where index 0 is the genesis checkpoint (`effectiveAt = 0`, `cumulativeMultiplier = 1e18`, `multiplierRatio = 0`).
 9. `scalingHistoryLength(class)` MUST return the total number of checkpoints including genesis.
 10. Once a checkpoint becomes effective (`effectiveAt <= block.timestamp`), it MUST NOT be modified or replaced.
 11. A pending (not yet effective) checkpoint MAY be replaced if the same class is rescheduled before activation.
@@ -196,7 +196,7 @@ interface IERC8056Composite {
 
 12. `setUIMultiplier(class, newMultiplier, effectiveAtTimestamp, id, description, uri)` MUST schedule an absolute cumulative multiplier. `effectiveAtTimestamp` MUST be in the future.
 13. A pending update MUST NOT affect the current effective multiplier or the composite multiplier until `effectiveAt` is reached.
-14. `UIScalingFactorUpdated` MUST be emitted when a multiplier is scheduled, with `{newMultiplier, multiplierDelta, effectiveAtTimestamp, classNonce, announcement}`.
+14. `UIScalingFactorUpdated` MUST be emitted when a multiplier is scheduled, with `{newMultiplier, multiplierRatio, effectiveAtTimestamp, classNonce, announcement}`.
 
 #### Yield-event derivation
 

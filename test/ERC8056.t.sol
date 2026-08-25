@@ -72,13 +72,13 @@ contract ERC8056Test is Test {
 
     function test_revertWhenMultiplierNotPositive() public {
         vm.prank(owner);
-        vm.expectRevert("Multiplier must be positive");
+        vm.expectRevert(ERC8056.ZeroMultiplier.selector);
         token.setUIMultiplier(0, block.timestamp + 1);
     }
 
     function test_revertWhenEffectiveAtNotInFuture() public {
         vm.prank(owner);
-        vm.expectRevert("Effective At must be in the future");
+        vm.expectRevert(ERC8056.EffectiveAtNotInFuture.selector);
         token.setUIMultiplier(2 * MULTIPLIER_DECIMALS, block.timestamp);
     }
 }

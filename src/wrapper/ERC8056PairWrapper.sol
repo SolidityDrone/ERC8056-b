@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC8056Composite} from "../interfaces/extension/IERC8056Composite.sol";
 import {IERC8056PairWrapper} from "../interfaces/wrapper/IERC8056PairWrapper.sol";
 import {MultiplierClass} from "../interfaces/extension/IERC8056MultiplierClass.sol";
@@ -36,8 +37,11 @@ import {LegToken} from "./LegToken.sol";
  *
  *  Implements {IERC8056PairWrapper}; see that interface for the stable
  *  integration surface protocols code against.
+ *
+ *  @dev Assumes the underlying is a standard ERC-20 with no fee-on-transfer
+ *       and no rebasing. Fee-on-transfer tokens will cause accounting mismatches.
  */
-contract ERC8056PairWrapper is IERC8056PairWrapper {
+contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable override underlying;
@@ -71,7 +75,11 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
     // ------------------------------------------------------------------
     /// @notice Lock `rawAmount` underlying into the window (currentNonce, currentNonce + lockNonces).
     /// @dev `lockNonces = 0` creates a degenerate window with coupon 0 (capital = full).
-    function wrap(uint256 rawAmount, uint256 lockNonces) external returns (uint256 startNonce, uint256 targetNonce) {
+    function wrap(uint256 rawAmount, uint256 lockNonces)
+        external
+        nonReentrant
+        returns (uint256 startNonce, uint256 targetNonce)
+    {
         if (rawAmount == 0) revert InvalidAmount();
 
         startNonce = scaledUnderlying.getClassNonce(MultiplierClass.Yield);
@@ -88,6 +96,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
 
         rawLocked += rawAmount;
         underlying.safeTransferFrom(msg.sender, address(this), rawAmount);
+
         _capitalLeg(pair).mint(msg.sender, rawAmount);
         _yieldLeg(pair).mint(msg.sender, rawAmount);
 
@@ -100,7 +109,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
     /// @notice Burn `amount` of BOTH legs of window (start, target); receive exactly `amount`.
     /// @dev The leg split in the event follows the frozen shares once the target is
     ///      effective; before that the whole amount is reported as capital.
-    function unwrap(uint256 amount, uint256 startNonce, uint256 targetNonce) external {
+    function unwrap(uint256 amount, uint256 startNonce, uint256 targetNonce) external nonReentrant {
         if (amount == 0) revert InvalidAmount();
         IERC8056PairWrapper.Pair storage pair = _requirePair(startNonce, targetNonce);
 
@@ -120,7 +129,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
     // ------------------------------------------------------------------
     /// @notice Burn `amount` yield tokens of window (start, target) for `amount * coupon` raw.
     /// @dev Only after `getClassNonce(MultiplierClass.Yield) >= targetNonce`; payout is frozen at the target multiplier.
-    function unwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce) external {
+    function unwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce) external nonReentrant {
         if (amount == 0) revert InvalidAmount();
         IERC8056PairWrapper.Pair storage pair = _requirePair(startNonce, targetNonce);
         if (scaledUnderlying.getClassNonce(MultiplierClass.Yield) < targetNonce) revert Locked();
@@ -137,7 +146,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
 
     /// @notice Burn `amount` capital tokens of window (start, target) for `amount * (1 - coupon)` raw.
     /// @dev Only after `getClassNonce(MultiplierClass.Yield) >= targetNonce`; payout is frozen at the target multiplier.
-    function unwrapCapital(uint256 amount, uint256 startNonce, uint256 targetNonce) external {
+    function unwrapCapital(uint256 amount, uint256 startNonce, uint256 targetNonce) external nonReentrant {
         if (amount == 0) revert InvalidAmount();
         IERC8056PairWrapper.Pair storage pair = _requirePair(startNonce, targetNonce);
         if (scaledUnderlying.getClassNonce(MultiplierClass.Yield) < targetNonce) revert Locked();
@@ -216,8 +225,10 @@ contract ERC8056PairWrapper is IERC8056PairWrapper {
         return address(pair.yield) == address(0) ? 0 : pair.yield.totalSupply();
     }
 
-    /// @dev Outstanding capital supply of window (start, target); equals the window's raw
-    ///      backing before any solo yield redemption.
+    /// @dev Outstanding capital supply of window (start, target). This equals the window's
+    ///      raw backing (staked amount) at creation time. After a solo `unwrapYield` the
+    ///      capital token supply is unchanged but `rawLocked` has decreased, so this value
+    ///      no longer reflects the remaining raw backing. Use `rawLocked` for total vault solvency.
     function rawLockedOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
         return capitalSupplyOf(startNonce, targetNonce);
     }

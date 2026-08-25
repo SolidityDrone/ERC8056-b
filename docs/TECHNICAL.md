@@ -22,9 +22,9 @@ keeps every EIP-8056 function untouched and adds:
 - **Scheduled (pending) updates per class.** `setUIMultiplier(class, multiplier,
   ts)` schedules an absolute multiplier. Nothing activates before
   `effectiveAt` — a pending update does not move today's multiplier.
-- **A checkpoint history per class.** `scalingCheckpointAt`, `scalingHistoryLength`. Each checkpoint is `{effectiveAt, cumulativeMultiplier, multiplierDelta}`. Once a checkpoint becomes effective it is permanent; a scheduled-but-not-yet-effective (pending) checkpoint is replaced if rescheduled, so only *landed* events are frozen.
+- **A checkpoint history per class.** `scalingCheckpointAt`, `scalingHistoryLength`. Each checkpoint is `{effectiveAt, cumulativeMultiplier, multiplierRatio}`. Once a checkpoint becomes effective it is permanent; a scheduled-but-not-yet-effective (pending) checkpoint is replaced if rescheduled, so only *landed* events are frozen.
 - **A yield-event log and nonce.** `getClassNonce(MultiplierClass.Yield)` counts effective Yield
-  updates; `classEventAtNonce(MultiplierClass.Yield, nonce)` returns `{timestamp, cumulativeMultiplier, multiplierDelta}`. This is the
+  updates; `classEventAtNonce(MultiplierClass.Yield, nonce)` returns `{timestamp, cumulativeMultiplier, multiplierRatio}`. This is the
   backbone of the Capital/Yield split.
 
 ### 1.2 What it solves
@@ -238,7 +238,7 @@ is sound and composable.
 - **UI multiplier** — EIP-8056's display scale (1e18 = 1.0x). Converts raw units
   to UI units.
 - **Scaling class** — a named reason for scaling: `Supply`, `Yield`, `Other`.
-- **Checkpoint** — `{effectiveAt, cumulativeMultiplier, multiplierDelta}`, one per class per update.
+- **Checkpoint** — `{effectiveAt, cumulativeMultiplier, multiplierRatio}`, one per class per update.
 - **Yield nonce** — the count of effective Yield events; the "event clock."
 - **Coupon** — the frozen yield fraction of a window: `max(1 - Y_s/Y_t, 0)`.
 - **CA push** — the central authority calling the extension when a dividend lands.

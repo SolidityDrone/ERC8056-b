@@ -14,13 +14,13 @@ interface IERC8056Composite {
     struct ScalingCheckpoint {
         uint256 effectiveAt;
         uint256 cumulativeMultiplier;
-        uint256 multiplierDelta;
+        uint256 multiplierRatio;
     }
 
     struct ClassScalingEvent {
         uint256 timestamp;
         uint256 cumulativeMultiplier;
-        uint256 multiplierDelta;
+        uint256 multiplierRatio;
     }
 
     struct Announcement {
@@ -32,7 +32,7 @@ interface IERC8056Composite {
     event UIScalingFactorUpdated(
         MultiplierClass indexed scalingClass,
         uint256 newMultiplier,
-        uint256 multiplierDelta,
+        uint256 multiplierRatio,
         uint256 effectiveAtTimestamp,
         uint256 classNonce,
         Announcement announcement
@@ -74,7 +74,7 @@ interface IERC8056Composite {
     function getClassNonce(MultiplierClass scalingClass) external view returns (uint256);
 
     /// @dev Scaling event for `scalingClass` at 1-based `nonce` (genesis is not an event).
-    ///      Returns `{timestamp, cumulativeMultiplier}`. Reverts if not recorded or not yet effective.
+    ///      Returns `{timestamp, cumulativeMultiplier, multiplierRatio}`. Reverts if not recorded or not yet effective.
     function classEventAtNonce(MultiplierClass scalingClass, uint256 nonce)
         external
         view

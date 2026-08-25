@@ -12,21 +12,17 @@ import {IERC8056Composite} from "./interfaces/extension/IERC8056Composite.sol";
 import {MultiplierClass} from "./interfaces/extension/IERC8056MultiplierClass.sol";
 import {UIScalingMath} from "./libraries/UIScalingMath.sol";
 import {Arrays} from "@openzeppelin/contracts/utils/Arrays.sol";
+import {ERC8056} from "./ERC8056.sol";
 
 /**
  * @title ERC8056Composite
  * @notice EIP-8056 with Supply / Yield decomposed scaling, scheduling, and history.
+ * @dev Inherits ERC8056 for storage-compatible beacon proxy upgrades.
+ *      The base contract's storage slots (_uiMultiplier, _newUIMultiplier,
+ *      _effectiveAt) are preserved but unused; all scaling logic uses the
+ *      class-based storage appended after the base layout.
  */
-contract ERC8056Composite is
-    ERC20,
-    ERC165,
-    IERC8056,
-    IERC8056Conversion,
-    IERC8056Balances,
-    IERC8056NewUIMultiplier,
-    IERC8056Composite,
-    Ownable
-{
+contract ERC8056Composite is ERC8056, IERC8056Composite {
     struct ClassScalingState {
         uint256 activeFactor;
         uint256 pendingFactor;
@@ -41,8 +37,7 @@ contract ERC8056Composite is
     mapping(MultiplierClass => uint256[]) private _checkpointTimestamps;
 
     constructor(string memory name_, string memory symbol_, address initialOwner)
-        ERC20(name_, symbol_)
-        Ownable(initialOwner)
+        ERC8056(name_, symbol_, initialOwner)
     {
         for (uint256 i = 0; i < UIScalingMath.SCALING_CLASS_COUNT; i++) {
             MultiplierClass scalingClass = MultiplierClass(i);
@@ -55,10 +50,6 @@ contract ERC8056Composite is
             _checkpointTimestamps[scalingClass].push(0);
         }
         emit UIMultiplierUpdated(0, UIScalingMath.MULTIPLIER_DECIMALS, block.timestamp);
-    }
-
-    function mint(address to, uint256 amount) external onlyOwner {
-        _mint(to, amount);
     }
 
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
@@ -79,13 +70,10 @@ contract ERC8056Composite is
         _validateScalingClass(scalingClass);
         uint256[] storage timestamps = _checkpointTimestamps[scalingClass];
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
-        // lowerBound returns first index where effectiveAt >= timestamp
         uint256 idx = Arrays.lowerBound(timestamps, timestamp);
-        // If idx points to exact match, use it; otherwise go back one
         if (idx < history.length && timestamps[idx] == timestamp) {
             return history[idx].cumulativeMultiplier;
         }
-        // idx is first index > timestamp, so idx-1 is last index <= timestamp
         return idx > 0 ? history[idx - 1].cumulativeMultiplier : UIScalingMath.MULTIPLIER_DECIMALS;
     }
 
@@ -150,11 +138,11 @@ contract ERC8056Composite is
     {
         _validateScalingClass(scalingClass);
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
-        uint256 index = nonce; // genesis checkpoint occupies index 0; event nonce 1 is index 1
+        uint256 index = nonce;
         if (index >= history.length) revert EventNotRecorded();
         if (history[index].effectiveAt > block.timestamp) revert EventNotEffective();
         return ClassScalingEvent(
-            history[index].effectiveAt, history[index].cumulativeMultiplier, history[index].multiplierDelta
+            history[index].effectiveAt, history[index].cumulativeMultiplier, history[index].multiplierRatio
         );
     }
 
@@ -168,7 +156,7 @@ contract ERC8056Composite is
         string calldata id,
         string calldata description,
         string calldata uri
-    ) public override onlyOwner {
+    ) public override(IERC8056Composite) onlyOwner {
         _setMultiplier(scalingClass, newMultiplier, effectiveAtTimestamp, id, description, uri);
     }
 
@@ -200,16 +188,16 @@ contract ERC8056Composite is
         state.pendingFactor = newMultiplier;
         state.effectiveAt = effectiveAtTimestamp;
 
-        uint256 delta =
+        uint256 ratio =
             oldMultiplier == 0 ? newMultiplier : newMultiplier * UIScalingMath.MULTIPLIER_DECIMALS / oldMultiplier;
-        history.push(ScalingCheckpoint(effectiveAtTimestamp, newMultiplier, delta));
+        history.push(ScalingCheckpoint(effectiveAtTimestamp, newMultiplier, ratio));
         _checkpointTimestamps[scalingClass].push(effectiveAtTimestamp);
         uint256 nonce = getClassNonce(scalingClass);
 
         emit UIScalingFactorUpdated(
             scalingClass,
             newMultiplier,
-            delta,
+            ratio,
             effectiveAtTimestamp,
             nonce,
             Announcement({id: id, description: description, uri: uri})
@@ -218,9 +206,9 @@ contract ERC8056Composite is
     }
 
     //==============================================================================//
-    // ERC-8056 composite                                                           //
+    // ERC-8056 overrides (composite replaces base single-class logic)              //
     //==============================================================================//
-    function uiMultiplier() public view override returns (uint256) {
+    function uiMultiplier() public view override(ERC8056) returns (uint256) {
         return uiMultiplierAt(block.timestamp);
     }
 
@@ -240,11 +228,11 @@ contract ERC8056Composite is
         return classEventAtNonce(scalingClass, nonce).cumulativeMultiplier;
     }
 
-    function newUIMultiplier() public view override returns (uint256) {
+    function newUIMultiplier() public view override(ERC8056) returns (uint256) {
         return _compositeFromPending();
     }
 
-    function effectiveAt() public view override returns (uint256) {
+    function effectiveAt() public view override(ERC8056) returns (uint256) {
         uint256 earliest = type(uint256).max;
         bool found;
         for (uint256 i = 0; i < UIScalingMath.SCALING_CLASS_COUNT; i++) {
@@ -263,7 +251,7 @@ contract ERC8056Composite is
     //==============================================================================//
     // Conversion                                                                   //
     //==============================================================================//
-    function toUIAmount(uint256 rawAmount) public view override returns (uint256) {
+    function toUIAmount(uint256 rawAmount) public view override(ERC8056) returns (uint256) {
         return UIScalingMath.toUIAmount(rawAmount, uiMultiplier());
     }
 
@@ -283,7 +271,7 @@ contract ERC8056Composite is
         return UIScalingMath.toUIAmount(rawAmount, uiScalingFactorAt(scalingClass, timestamp));
     }
 
-    function fromUIAmount(uint256 uiAmount) public view override returns (uint256) {
+    function fromUIAmount(uint256 uiAmount) public view override(ERC8056) returns (uint256) {
         return UIScalingMath.fromUIAmount(uiAmount, uiMultiplier());
     }
 
@@ -291,33 +279,29 @@ contract ERC8056Composite is
         return UIScalingMath.fromUIAmount(uiAmount, uiScalingFactor(scalingClass));
     }
 
-    function balanceOfUI(address account) public view override returns (uint256) {
+    function balanceOfUI(address account) public view override(ERC8056) returns (uint256) {
         return toUIAmount(balanceOf(account));
     }
 
-    function totalSupplyUI() public view override returns (uint256) {
+    function totalSupplyUI() public view override(ERC8056) returns (uint256) {
         return toUIAmount(totalSupply());
     }
 
     function _update(address from, address to, uint256 amount) internal virtual override {
-        super._update(from, to, amount);
+        ERC20._update(from, to, amount);
         emit TransferWithUIAmount(from, to, amount, toUIAmount(amount));
     }
 
     function _compositeFromPending() internal view returns (uint256) {
         return UIScalingMath.composeUiMultiplier(
-            _factorForComposite(MultiplierClass.Supply, true),
-            _factorForComposite(MultiplierClass.Yield, true),
-            _factorForComposite(MultiplierClass.Other, true)
+            _factorForComposite(MultiplierClass.Supply),
+            _factorForComposite(MultiplierClass.Yield),
+            _factorForComposite(MultiplierClass.Other)
         );
     }
 
-    function _factorForComposite(MultiplierClass scalingClass, bool usePending) internal view returns (uint256) {
-        ClassScalingState storage state = _classScaling[scalingClass];
-        if (!usePending) {
-            return block.timestamp >= state.effectiveAt ? state.pendingFactor : state.activeFactor;
-        }
-        return state.pendingFactor;
+    function _factorForComposite(MultiplierClass scalingClass) internal view returns (uint256) {
+        return _classScaling[scalingClass].pendingFactor;
     }
 
     function _validateScalingClass(MultiplierClass scalingClass) internal pure {

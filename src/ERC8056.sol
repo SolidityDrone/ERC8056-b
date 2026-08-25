@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC8056} from "./interfaces/base/IERC8056.sol";
 import {IERC8056Conversion} from "./interfaces/base/IERC8056Conversion.sol";
 import {IERC8056Balances} from "./interfaces/base/IERC8056Balances.sol";
@@ -20,6 +21,9 @@ contract ERC8056 is ERC20, ERC165, IERC8056, IERC8056Conversion, IERC8056Balance
     uint256 private _newUIMultiplier = MULTIPLIER_DECIMALS;
     uint256 private _effectiveAt;
 
+    error ZeroMultiplier();
+    error EffectiveAtNotInFuture();
+
     constructor(string memory name_, string memory symbol_, address initialOwner)
         ERC20(name_, symbol_)
         Ownable(initialOwner)
@@ -35,58 +39,56 @@ contract ERC8056 is ERC20, ERC165, IERC8056, IERC8056Conversion, IERC8056Balance
             || interfaceId == type(IERC8056NewUIMultiplier).interfaceId || super.supportsInterface(interfaceId);
     }
 
-    function uiMultiplier() public view override returns (uint256) {
+    function uiMultiplier() public view virtual override returns (uint256) {
         if (block.timestamp >= _effectiveAt) {
             return _newUIMultiplier;
         }
         return _uiMultiplier;
     }
 
-    function newUIMultiplier() public view override returns (uint256) {
+    function newUIMultiplier() public view virtual override returns (uint256) {
         return _newUIMultiplier;
     }
 
-    function effectiveAt() public view override returns (uint256) {
+    function effectiveAt() public view virtual override returns (uint256) {
         return _effectiveAt;
     }
 
     function setUIMultiplier(uint256 newMultiplier, uint256 effectiveAtTimestamp) external onlyOwner {
-        require(newMultiplier > 0, "Multiplier must be positive");
-        require(effectiveAtTimestamp > block.timestamp, "Effective At must be in the future");
+        if (newMultiplier == 0) revert ZeroMultiplier();
+        if (effectiveAtTimestamp <= block.timestamp) revert EffectiveAtNotInFuture();
 
-        if (block.timestamp > _effectiveAt) {
-            uint256 oldMultiplier = _newUIMultiplier;
-            _uiMultiplier = oldMultiplier;
-            _newUIMultiplier = newMultiplier;
-            _effectiveAt = effectiveAtTimestamp;
-            emit UIMultiplierUpdated(oldMultiplier, newMultiplier, effectiveAtTimestamp);
+        uint256 previousMultiplier;
+        if (block.timestamp >= _effectiveAt) {
+            _uiMultiplier = _newUIMultiplier;
+            previousMultiplier = _newUIMultiplier;
         } else {
-            uint256 oldMultiplier = _uiMultiplier;
-            _newUIMultiplier = newMultiplier;
-            _effectiveAt = effectiveAtTimestamp;
-            emit UIMultiplierUpdated(oldMultiplier, newMultiplier, effectiveAtTimestamp);
+            previousMultiplier = _uiMultiplier;
         }
+        _newUIMultiplier = newMultiplier;
+        _effectiveAt = effectiveAtTimestamp;
+        emit UIMultiplierUpdated(previousMultiplier, newMultiplier, effectiveAtTimestamp);
     }
 
-    function toUIAmount(uint256 rawAmount) public view override returns (uint256) {
+    function toUIAmount(uint256 rawAmount) public view virtual override returns (uint256) {
         if (block.timestamp >= _effectiveAt) {
-            return (rawAmount * _newUIMultiplier) / MULTIPLIER_DECIMALS;
+            return Math.mulDiv(rawAmount, _newUIMultiplier, MULTIPLIER_DECIMALS);
         }
-        return (rawAmount * _uiMultiplier) / MULTIPLIER_DECIMALS;
+        return Math.mulDiv(rawAmount, _uiMultiplier, MULTIPLIER_DECIMALS);
     }
 
-    function fromUIAmount(uint256 uiAmount) public view override returns (uint256) {
+    function fromUIAmount(uint256 uiAmount) public view virtual override returns (uint256) {
         if (block.timestamp >= _effectiveAt) {
-            return (uiAmount * MULTIPLIER_DECIMALS) / _newUIMultiplier;
+            return Math.mulDiv(uiAmount, MULTIPLIER_DECIMALS, _newUIMultiplier);
         }
-        return (uiAmount * MULTIPLIER_DECIMALS) / _uiMultiplier;
+        return Math.mulDiv(uiAmount, MULTIPLIER_DECIMALS, _uiMultiplier);
     }
 
-    function balanceOfUI(address account) public view override returns (uint256) {
+    function balanceOfUI(address account) public view virtual override returns (uint256) {
         return toUIAmount(balanceOf(account));
     }
 
-    function totalSupplyUI() public view override returns (uint256) {
+    function totalSupplyUI() public view virtual override returns (uint256) {
         return toUIAmount(totalSupply());
     }
 
