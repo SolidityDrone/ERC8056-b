@@ -222,8 +222,9 @@ window.
   balance-checked: fee-on-transfer (FoT) tokens revert
   `FeeOnTransferNotSupported`.
 - **One EIP, multiple contracts.** The registry + wrapper are optional consumer
-  surfaces of the same ERC-8056 improvement; the base extension (`ERC8056`)
-  remains the core.
+  surfaces of the same ERC-8056 improvement; the extension implementation
+  (`ERC8056Composite`) remains the core asset, and vanilla `ERC8056` is its
+  spec-compatible reference/base layout.
 
 ## 7. References
 

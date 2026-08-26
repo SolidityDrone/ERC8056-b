@@ -12,7 +12,12 @@ interface IERC8056 {
      * @dev Emitted when the UI multiplier is updated or initialized.
      * @param oldMultiplier The previous multiplier value. A value of 0 indicates
      * initialization (no prior multiplier exists).
-     * @param newMultiplier The new multiplier value scheduled to take effect
+     * @param newMultiplier The new multiplier value scheduled to take effect.
+     * NOTE: implementations extending ERC-8056 with composite semantics may
+     * emit a different value here than their per-class pending view would
+     * suggest (e.g. ERC8056Composite emits the projected composite of every
+     * live pending update); see the extension documentation for exact
+     * semantics before relying on this field off-chain.
      * @param effectiveAtTimestamp The timestamp when the new multiplier becomes active
      */
     event UIMultiplierUpdated(uint256 oldMultiplier, uint256 newMultiplier, uint256 effectiveAtTimestamp);

@@ -47,8 +47,8 @@ contract ERC8056 is
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
         return interfaceId == type(IERC8056).interfaceId || interfaceId == type(IERC8056Conversion).interfaceId
             || interfaceId == type(IERC8056Balances).interfaceId
-            || interfaceId == type(IERC8056NewUIMultiplier).interfaceId || interfaceId == type(IERC8056Cancel).interfaceId
-            || super.supportsInterface(interfaceId);
+            || interfaceId == type(IERC8056NewUIMultiplier).interfaceId
+            || interfaceId == type(IERC8056Cancel).interfaceId || super.supportsInterface(interfaceId);
     }
 
     function uiMultiplier() public view virtual override returns (uint256) {
@@ -63,6 +63,22 @@ contract ERC8056 is
     }
 
     function effectiveAt() public view virtual override returns (uint256) {
+        return _effectiveAt;
+    }
+
+    /// @dev Vanilla multiplier as of an explicit timestamp, mirroring {uiMultiplier}
+    ///      semantics. Exposed internally so storage-compatible extensions that
+    ///      inherit these slots (see ERC8056Composite) can keep serving the vanilla
+    ///      denomination during their migration window.
+    function _vanillaMultiplierAt(uint256 timestamp) internal view returns (uint256) {
+        return timestamp >= _effectiveAt ? _newUIMultiplier : _uiMultiplier;
+    }
+
+    function _vanillaNewMultiplier() internal view returns (uint256) {
+        return _newUIMultiplier;
+    }
+
+    function _vanillaEffectiveAt() internal view returns (uint256) {
         return _effectiveAt;
     }
 

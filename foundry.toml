@@ -3,7 +3,16 @@ src = "src"
 out = "out"
 libs = ["lib"]
 solc = "0.8.24"
-via_ir = true
+# via-IR is required: _setMultiplier exceeds legacy-IR stack limits without it
+# (which breaks plain `forge coverage`). Measured runtime sizes stay well below
+# EIP-170 (< 16 KB), so the via-IR optimizer's savings are unnecessary here.
+# Do NOT enable it: the Yul optimizer legally caches repeated block.timestamp
+# reads within a function (true on live chains) which miscompiles tests that
+# chain `vm.warp(block.timestamp + d)` in the same function into stale warps.
+optimizer = false
+# Pinned for reproducible bytecode; cancun is the latest EVM target supported
+# by solc 0.8.24.
+evm_version = "cancun"
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "forge-std/=lib/forge-std/src/",

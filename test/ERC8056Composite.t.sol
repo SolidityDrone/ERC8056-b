@@ -837,6 +837,63 @@ contract ERC8056CompositeTest is ScalingTestBase {
     }
 
     //==============================================================================//
+    // Issuer notice period (L3)                                                   //
+    //==============================================================================//
+
+    function test_noticePeriod_defaultZero_allowsImmediateSchedule() public {
+        assertEq(token.minNoticePeriod(), 0);
+        uint256 effectiveAt = block.timestamp + 1;
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, effectiveAt, "", "", "");
+        assertTrue(token.hasPendingUIMultiplier(MultiplierClass.Yield));
+    }
+
+    function test_noticePeriod_enforced_afterRaise() public {
+        vm.prank(owner);
+        token.setMinNoticePeriod(1 days);
+        assertEq(token.minNoticePeriod(), 1 days);
+
+        // too-soon announcement rejected even though it lands in the future
+        vm.prank(owner);
+        vm.expectRevert(ERC8056Composite.NoticePeriodTooShort.selector);
+        token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 hours, "", "", "");
+
+        // compliant announcement accepted (boundary inclusive)
+        uint256 effectiveAt = block.timestamp + 1 days;
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, effectiveAt, "", "", "");
+        assertEq(token.effectiveAt(MultiplierClass.Yield), effectiveAt);
+    }
+
+    function test_noticePeriod_loweringBackToZero_restoresVanillaBehavior() public {
+        vm.startPrank(owner);
+        token.setMinNoticePeriod(30 days);
+        token.setMinNoticePeriod(0);
+        token.setUIMultiplier(MultiplierClass.Other, DOUBLE, block.timestamp + 1, "", "", "");
+        vm.stopPrank();
+    }
+
+    function test_noticePeriod_setter_isOwnerOnly_andEmitsEvent() public {
+        vm.prank(holder);
+        vm.expectRevert();
+        token.setMinNoticePeriod(1 days);
+
+        vm.prank(owner);
+        vm.expectEmit(true, true, true, true);
+        emit IERC8056Composite.MinimumNoticePeriodSet(0, 2 hours);
+        token.setMinNoticePeriod(2 hours);
+    }
+
+    function test_noticePeriod_setter_rejectsAbsurdValues() public {
+        vm.prank(owner);
+        vm.expectRevert(ERC8056Composite.NoticePeriodTooLong.selector);
+        token.setMinNoticePeriod(3651 days);
+
+        vm.prank(owner);
+        token.setMinNoticePeriod(3650 days); // cap inclusive
+    }
+
+    //==============================================================================//
     // Lazy genesis: upgrade from vanilla ERC8056 proxy                             //
     //==============================================================================//
 
@@ -930,6 +987,95 @@ contract ERC8056CompositeTest is ScalingTestBase {
         // non-zero nonces still revert on empty history
         vm.expectRevert(ERC8056Composite.EventNotRecorded.selector);
         upgraded.classEventAtNonce(MultiplierClass.Yield, 1);
+    }
+
+    /// @dev M1: between the beacon/proxy swap and the first schedule, composite
+    ///      reads must reflect the inherited vanilla multiplier from the dead base
+    ///      slots instead of returning neutral — otherwise third-party UI
+    ///      accounting silently halves/doubles during the migration window.
+    function test_UpgradeFromVanilla_PreBootstrap_ReadsInheritVanillaMultiplier() public {
+        ERC1967Proxy proxy = new ERC1967Proxy(address(new ERC8056("v", "V", owner)), "");
+        // Vanilla live multiplier of 3x, no pending update (see C-M3 test layout).
+        vm.store(address(proxy), bytes32(uint256(5)), bytes32(uint256(uint160(owner))));
+        vm.store(address(proxy), bytes32(uint256(6)), bytes32(uint256(3 * NEUTRAL)));
+        vm.store(address(proxy), bytes32(uint256(7)), bytes32(uint256(3 * NEUTRAL)));
+
+        address compositeImpl = address(new ERC8056Composite("v", "V", owner));
+        vm.store(address(proxy), IMPL_SLOT, bytes32(uint256(uint160(compositeImpl))));
+        ERC8056Composite upgraded = ERC8056Composite(address(proxy));
+
+        // Pre-bootstrap: vanilla denomination must survive immediately.
+        assertEq(upgraded.uiMultiplier(), 3 * NEUTRAL);
+        assertEq(upgraded.newUIMultiplier(), 3 * NEUTRAL);
+        assertEq(upgraded.effectiveAt(), 0);
+
+        vm.prank(owner);
+        upgraded.mint(holder, RAW_STAKE);
+        assertEq(upgraded.balanceOfUI(holder), 300 ether);
+        assertEq(upgraded.totalSupplyUI(), 300 ether);
+        assertEq(upgraded.toUIAmount(RAW_STAKE), 3 * RAW_STAKE);
+        assertEq(upgraded.fromUIAmount(300 ether), RAW_STAKE);
+
+        // Class factor views stay neutral per class until genesis is seeded.
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Supply), NEUTRAL);
+        assertEq(upgraded.scalingHistoryLength(MultiplierClass.Yield), 0);
+        assertEq(upgraded.getClassNonce(MultiplierClass.Yield), 0);
+    }
+
+    /// @dev M1 variant: a vanilla token upgraded while a live PENDING announcement
+    ///      sits in the base slots keeps observing it through composite reads
+    ///      until the first schedule lands (vanilla value/semantics preserved).
+    function test_UpgradeFromVanilla_PreBootstrap_VanillaPendingObservable() public {
+        ERC1967Proxy proxy = new ERC1967Proxy(address(new ERC8056("v", "V", owner)), "");
+        uint256 ts = block.timestamp;
+        uint256 pendEff = ts + 30 days;
+        vm.store(address(proxy), bytes32(uint256(5)), bytes32(uint256(uint160(owner))));
+        vm.store(address(proxy), bytes32(uint256(6)), bytes32(uint256(2 * NEUTRAL)));
+        vm.store(address(proxy), bytes32(uint256(7)), bytes32(uint256(3 * NEUTRAL)));
+        vm.store(address(proxy), bytes32(uint256(8)), bytes32(uint256(pendEff)));
+
+        address compositeImpl = address(new ERC8056Composite("v", "V", owner));
+        vm.store(address(proxy), IMPL_SLOT, bytes32(uint256(uint160(compositeImpl))));
+        ERC8056Composite upgraded = ERC8056Composite(address(proxy));
+
+        // Active 2x now; pending 3x visible at its future effective time.
+        assertEq(upgraded.uiMultiplier(), 2 * NEUTRAL);
+        assertEq(upgraded.newUIMultiplier(), 3 * NEUTRAL);
+        assertEq(upgraded.effectiveAt(), pendEff);
+
+        vm.warp(pendEff + 1);
+        assertEq(upgraded.uiMultiplier(), 3 * NEUTRAL);
+
+        // First schedule behaves as before and takes over the bookkeeping.
+        vm.prank(owner);
+        upgraded.setUIMultiplier(MultiplierClass.Supply, DOUBLE, block.timestamp + 10, "", "", "");
+        vm.warp(block.timestamp + 11);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Supply), DOUBLE);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Yield), NEUTRAL);
+        assertEq(upgraded.uiMultiplier(), DOUBLE);
+    }
+
+    /// @dev M1 safety edge: a proxy upgraded but never initialized in vanilla
+    ///      (zero multiplier slots) still reads neutral instead of a 0x factor.
+    function test_UpgradeFromVanilla_PreBootstrap_UninitializedStaysNeutral() public {
+        ERC1967Proxy proxy = new ERC1967Proxy(address(new ERC8056("v", "V", owner)), "");
+        vm.store(address(proxy), bytes32(uint256(5)), bytes32(uint256(uint160(owner))));
+        address compositeImpl = address(new ERC8056Composite("v", "V", owner));
+        vm.store(address(proxy), IMPL_SLOT, bytes32(uint256(uint160(compositeImpl))));
+        ERC8056Composite upgraded = ERC8056Composite(address(proxy));
+
+        assertEq(upgraded.uiMultiplier(), NEUTRAL);
+        assertEq(upgraded.balanceOfUI(holder), RAW_STAKE - RAW_STAKE + 0); // holder unminted
+        assertEq(upgraded.toUIAmount(RAW_STAKE), RAW_STAKE);
+    }
+
+    /// @dev Direct deploys are seeded by the constructor and never see the
+    ///      inheritance path; ensure overrides leave their behavior untouched.
+    function test_DirectDeploy_PostConstructorReadsNeutral() public view {
+        assertEq(token.uiMultiplier(), NEUTRAL);
+        assertEq(token.newUIMultiplier(), NEUTRAL);
+        assertEq(token.effectiveAt(), 0);
+        assertEq(token.totalSupplyUI(), RAW_STAKE);
     }
 
     /// @dev C-M3: a non-neutral vanilla multiplier must survive the upgrade as the

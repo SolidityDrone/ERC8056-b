@@ -21,8 +21,10 @@ import {ERC8056} from "./ERC8056.sol";
  * @notice EIP-8056 with Supply / Yield decomposed scaling, scheduling, and history.
  * @dev Inherits ERC8056 for storage-compatible beacon proxy upgrades.
  *      The base contract's storage slots (_uiMultiplier, _newUIMultiplier,
- *      _effectiveAt) are preserved but unused; all scaling logic uses the
- *      class-based storage appended after the base layout.
+ *      _effectiveAt) are preserved: until the first schedule bootstraps class
+ *      history they are actively served so an upgraded vanilla proxy keeps its
+ *      display denomination; afterwards all scaling logic uses the class-based
+ *      storage appended after the base layout.
  */
 contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     struct ClassScalingState {
@@ -34,10 +36,18 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     error EventNotRecorded();
     error EventNotEffective();
     error CompositeOverflow();
+    error NoticePeriodTooShort();
+    error NoticePeriodTooLong();
+
+    uint256 private constant MAX_NOTICE_PERIOD = 3650 days;
 
     mapping(MultiplierClass => ClassScalingState) private _classScaling;
     mapping(MultiplierClass => ScalingCheckpoint[]) private _checkpoints;
     mapping(MultiplierClass => uint256[]) private _checkpointTimestamps;
+
+    /// @dev Minimum notice every announcement must provide. Appended at the end
+    ///      of the layout so deployed composites can upgrade in place.
+    uint256 private _minNoticePeriod;
 
     constructor(string memory name_, string memory symbol_, address initialOwner)
         ERC8056(name_, symbol_, initialOwner)
@@ -78,6 +88,10 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     }
 
     function uiMultiplierAt(uint256 timestamp) public view override returns (uint256) {
+        // M1 migration window: a freshly-upgraded vanilla proxy holds its live
+        // multiplier in the inherited base slots until the first schedule seeds
+        // genesis. Serve those slots instead of a misleading neutral 1e18.
+        if (!_isBootstrapped()) return _inheritedMultiplierAt(timestamp);
         return UIScalingMath.composeUiMultiplier(
             uiScalingFactorAt(MultiplierClass.Supply, timestamp),
             uiScalingFactorAt(MultiplierClass.Yield, timestamp),
@@ -225,28 +239,13 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         _validateScalingClass(scalingClass);
         require(newMultiplier > 0, "ERC8056: factor must be positive");
         require(effectiveAtTimestamp > block.timestamp, "ERC8056: effective time must be future");
+        if (effectiveAtTimestamp < block.timestamp + _minNoticePeriod) revert NoticePeriodTooShort();
 
         ClassScalingState storage state = _classScaling[scalingClass];
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
 
-        uint256 oldComposite = uiMultiplier();
         uint256 oldMultiplier = uiScalingFactor(scalingClass);
-
-        // Schedule-time guard: reject announcements whose pending composite would
-        // overflow once this class's factor lands. `pending` is the current
-        // pending composite (overflow-safe via sequential mulDiv). `otherComposite`
-        // is the composite of every OTHER class's pending factor; multiplying it
-        // by the new factor must stay below 2^256. Both intermediate products use
-        // saturating arithmetic so the guard itself can never panic.
-        uint256 pending = _compositeFromPending();
-        uint256 otherComposite = _safeMulDiv(pending, UIScalingMath.MULTIPLIER_DECIMALS, _pendingFactor(scalingClass));
-        // The composite after this class lands is `otherComposite * newMultiplier / 1e18`,
-        // so reject when that exceeds 2^256. When otherComposite <= 1e18 the threshold
-        // quotient would itself exceed 2^256, meaning no factor can overflow — cap it.
-        uint256 threshold = otherComposite > UIScalingMath.MULTIPLIER_DECIMALS
-            ? Math.mulDiv(type(uint256).max, UIScalingMath.MULTIPLIER_DECIMALS, otherComposite)
-            : type(uint256).max;
-        if (newMultiplier > threshold) revert CompositeOverflow();
+        _rejectCompositeOverflow(scalingClass, newMultiplier);
 
         if (hasPendingUIMultiplier(scalingClass)) {
             history.pop();
@@ -280,7 +279,41 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
             nonce,
             Announcement({id: id, description: description, uri: uri})
         );
-        emit UIMultiplierUpdated(oldComposite, _compositeFromPending(), effectiveAtTimestamp);
+        emit UIMultiplierUpdated(uiMultiplier(), _compositeFromPending(), effectiveAtTimestamp);
+    }
+
+    /// @dev Schedule-time guard: rejects announcements whose pending composite
+    ///      would overflow once this class's factor lands. The current pending
+    ///      composite is overflow-safe via sequential mulDiv. `otherComposite` is
+    ///      the composite of every OTHER class's pending factor; multiplying it by
+    ///      the new factor must stay below 2^256. Both intermediate products use
+    //       saturating arithmetic so the guard itself can never panic.
+    /// @dev Extracted from {_setMultiplier} to keep its stack shallow enough to
+    ///      compile without via-IR (forge coverage runs the legacy pipeline).
+    function _rejectCompositeOverflow(MultiplierClass scalingClass, uint256 newMultiplier) private view {
+        uint256 pending = _compositeFromPending();
+        uint256 otherComposite = _safeMulDiv(pending, UIScalingMath.MULTIPLIER_DECIMALS, _pendingFactor(scalingClass));
+        // The composite after this class lands is `otherComposite * newMultiplier / 1e18`,
+        // so reject when that exceeds 2^256. When otherComposite <= 1e18 the threshold
+        // quotient would itself exceed 2^256, meaning no factor can overflow — cap it.
+        uint256 threshold = otherComposite > UIScalingMath.MULTIPLIER_DECIMALS
+            ? Math.mulDiv(type(uint256).max, UIScalingMath.MULTIPLIER_DECIMALS, otherComposite)
+            : type(uint256).max;
+        if (newMultiplier > threshold) revert CompositeOverflow();
+    }
+
+    /// @notice Issuer's self-imposed minimum notice for future announcements.
+    /// @dev 0 by default, so vanilla immediate scheduling stays available. The
+    ///      setter lets an issuer publicly bind itself before opening markets.
+    function minNoticePeriod() public view returns (uint256) {
+        return _minNoticePeriod;
+    }
+
+    function setMinNoticePeriod(uint256 seconds_) external onlyOwner {
+        if (seconds_ > MAX_NOTICE_PERIOD) revert NoticePeriodTooLong();
+        uint256 previous = _minNoticePeriod;
+        _minNoticePeriod = seconds_;
+        emit MinimumNoticePeriodSet(previous, seconds_);
     }
 
     //==============================================================================//
@@ -318,6 +351,23 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     function _safeMulDiv(uint256 a, uint256 b, uint256 c) private pure returns (uint256) {
         if (a > type(uint256).max / b) return type(uint256).max;
         return Math.mulDiv(a * b, 1, c);
+    }
+
+    /// @dev True once any class holds checkpoint history. Direct deploys seed all
+    ///      classes in the constructor; upgraded proxies stay false until the
+    ///      first schedule seeds genesis via {_lazyBootstrapAll}. Checking Supply
+    ///      alone is sufficient: genesis is seeded either by the constructor (all
+    ///      classes) or lazily (all empty classes in one transaction).
+    function _isBootstrapped() private view returns (bool) {
+        return _checkpoints[MultiplierClass.Supply].length > 0;
+    }
+
+    /// @dev Vanilla multiplier read from the inherited base slots with the same
+    ///      0→neutral coercion {_lazyBootstrapAll} applies, so a proxy that was
+    ///      never initialized under the vanilla implementation reads neutral.
+    function _inheritedMultiplierAt(uint256 timestamp) private view returns (uint256) {
+        uint256 inherited = ERC8056._vanillaMultiplierAt(timestamp);
+        return inherited == 0 ? UIScalingMath.MULTIPLIER_DECIMALS : inherited;
     }
 
     /// @dev Seeds genesis checkpoints for every class whose history is empty.
@@ -376,6 +426,13 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     ///      would result once every pending update lands, counting only live
     ///      announcements.
     function newUIMultiplier() public view override(ERC8056) returns (uint256) {
+        if (!_isBootstrapped()) {
+            // Migration window: surface the vanilla token's own pending slot
+            // (0 on an uninitialized proxy reads as neutral, mirroring the
+            // 0-factor coercion in {_lazyBootstrapAll}).
+            uint256 inheritedPending = ERC8056.newUIMultiplier();
+            return inheritedPending == 0 ? UIScalingMath.MULTIPLIER_DECIMALS : inheritedPending;
+        }
         return _compositeFromPending();
     }
 
@@ -384,6 +441,7 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     ///      returns the most recent effective event across classes (0 only when
     ///      nothing was ever scheduled) instead of resetting to 0.
     function effectiveAt() public view override(ERC8056) returns (uint256) {
+        if (!_isBootstrapped()) return ERC8056.effectiveAt();
         uint256 earliest = type(uint256).max;
         uint256 latestEvent;
         for (uint256 i = 0; i < UIScalingMath.SCALING_CLASS_COUNT; i++) {

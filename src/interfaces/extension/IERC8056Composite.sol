@@ -132,4 +132,19 @@ interface IERC8056Composite {
     /// @dev Cancels the pending scaling update for `scalingClass`, restoring the active factor.
     ///      Reverts if no pending update exists for the class.
     function cancelPendingUIMultiplier(MultiplierClass scalingClass) external;
+
+    // ---- Issuer notice period (optional self-restraint) ----
+
+    /// @dev Emitted when the issuer changes the minimum notice every future
+    ///      announcement must provide between scheduling and its effective time.
+    event MinimumNoticePeriodSet(uint256 previousPeriod, uint256 newPeriod);
+
+    /// @dev Minimum delay an announcement MUST give between its schedule call
+    ///      and its effective time. Defaults to 0 (vanilla-compatible). The
+    ///      issuer may raise it to publicly bound its own power to reprice open
+    ///      Yield windows with near-zero notice.
+    function minNoticePeriod() external view returns (uint256);
+
+    /// @dev Sets the minimum notice period. Reverts above a hard cap of 3650 days.
+    function setMinNoticePeriod(uint256 seconds_) external;
 }

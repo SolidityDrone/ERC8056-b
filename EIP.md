@@ -201,6 +201,19 @@ interface IERC8056Composite {
     // Cancels the pending scaling update for `scalingClass`, restoring the
     // active factor. Reverts if no pending update exists for the class.
     function cancelPendingUIMultiplier(MultiplierClass scalingClass) external;
+
+    // ---- Optional issuer notice period ----
+
+    // Emitted when the issuer changes the minimum notice every future
+    // announcement must provide between scheduling and its effective time.
+    event MinimumNoticePeriodSet(uint256 previousPeriod, uint256 newPeriod);
+
+    // Minimum delay an announcement MUST give between its schedule call and
+    // its effective time. Defaults to 0 (vanilla-compatible).
+    function minNoticePeriod() external view returns (uint256);
+
+    // Sets the minimum notice period. Reverts above a hard cap of 3650 days.
+    function setMinNoticePeriod(uint256 seconds_) external;
 }
 ```
 
@@ -226,11 +239,23 @@ interface IERC8056Composite {
 10. Once a checkpoint becomes effective (`effectiveAt <= block.timestamp`), it MUST NOT be modified or replaced.
 11. A pending (not yet effective) checkpoint MAY be replaced if the same class is rescheduled before activation.
 
+`multiplierRatio` is the ratio of that event's new cumulative factor to the
+class's immediately preceding cumulative factor, in 18-decimal fixed point:
+`ratio = floor(newFactor * 1e18 / previousCumulative)`. It describes the step
+the event applied relative to the prior era (`2e18` = doubling), which lets
+indexers reconstruct per-event steps without reading two checkpoints.
+
 #### Scheduled (pending) updates
 
 12. `setUIMultiplier(class, newMultiplier, effectiveAtTimestamp, id, description, uri)` MUST schedule an absolute cumulative multiplier. `effectiveAtTimestamp` MUST be in the future.
 13. A pending update MUST NOT affect the current effective multiplier or the composite multiplier until `effectiveAt` is reached.
-14. `UIScalingFactorUpdated` MUST be emitted when a multiplier is scheduled, with `{newMultiplier, multiplierRatio, effectiveAtTimestamp, classNonce, announcement}`.
+14. `UIScalingFactorUpdated` MUST be emitted when a multiplier is scheduled, with `{newMultiplier, multiplierRatio, effectiveAtTimestamp, classNonce, announcement}`. The emitted `classNonce` is the nonce of the era in effect at scheduling time; the announced update itself will take nonce `classNonce + 1` once it lands.
+
+An implementation MAY expose `minNoticePeriod`/`setMinNoticePeriod` to let
+the issuer publicly bind itself to a minimum delay between scheduling and
+effect. If exposed, 0 MUST be the default (preserving vanilla-compatible
+immediate scheduling), and `setMinNoticePeriod` MUST revert above a cap of
+3650 days.
 
 #### Cancelling pending updates
 
@@ -255,8 +280,11 @@ interface IERC8056Composite {
 
 | Interface | ID |
 |-----------|----|
-| `IERC8056Composite` | computed via `type(IERC8056Composite).interfaceId` |
+| `IERC8056Composite` | `0xa57626bb` (`type(IERC8056Composite).interfaceId`) |
+| `IERC8056Cancel` (optional) | `0xf3ddaafe` (`type(IERC8056Cancel).interfaceId`) |
 
+Base ERC-8056 interface IDs are unchanged from the vanilla spec; see
+[Backwards Compatibility](#backwards-compatibility).
 Implementations that also implement the base ERC-8056 interfaces MUST report those interface IDs via ERC-165 as well. Note that `IERC8056NewUIMultiplier` retains its vanilla spec ID (`0x4bd27648`) -- cancel has been moved out into the separate optional `IERC8056Cancel` interface, so implementing cancel does not change the pending-multiplier interface ID.
 
 ### Deviations from vanilla ERC-8056
@@ -269,11 +297,18 @@ The composite implementation keeps every vanilla ERC-8056 interface ID intact, b
 - **Composite-at-nonce clamping.** `uiMultiplierAtNonce(uint256 nonce)` composes per-class factors at `min(nonce, getClassNonce(class))`, with `nonce 0` contributing `1e18`. The composition **saturates at `type(uint256).max` rather than reverting**, so it never reverts for extreme era-mixed factors or arbitrarily large nonces, and equals `uiMultiplier()` for any sufficiently large representable `nonce`. The per-class overload reverts for nonces beyond the class history, as in requirement 21.
 - **Synthetic genesis on empty history.** If a class has no checkpoint history yet (a freshly-upgraded vanilla proxy), `classEventAtNonce(class, 0)` MUST return the synthetic genesis event `{timestamp: 0, cumulativeMultiplier: 1e18, multiplierRatio: 0}` instead of reverting — matching direct deploys, where index 0 IS genesis. Nonces > 0 still revert with `EventNotRecorded`. This keeps degenerate wrapper windows `(0, 0)` readable before the issuer's first schedule bootstraps real genesis.
 - **Schedule-time overflow guard.** Scheduling a factor whose pending composite would overflow reverts with `CompositeOverflow()` instead of an arithmetic panic.
+- **Migration-window reads inherit vanilla slots.** A freshly-upgraded vanilla proxy serves its pre-upgrade denomination from the inherited base slots until the first schedule bootstraps class history: `uiMultiplier()`, `uiMultiplierAt(ts)`, `newUIMultiplier()` and `effectiveAt()` mirror vanilla semantics (including a live pending vanilla update), and the conversion/balance views (`toUIAmount`, `fromUIAmount`, `balanceOfUI`, `totalSupplyUI`) flow through this path, so third-party UI accounting observes no discontinuity between upgrade and first schedule. A zero-valued slot (never-initialized proxy) reads as neutral.
 
+### Additional classes
 
-### No explicit prohibition on additional classes
-
-This EIP defines three classes (`Supply`, `Yield`, `Other`) as the standard decomposition. Implementations MUST NOT add enum values that would alter the `IERC8056Composite` interface ID or break the `composeUiMultiplier` product semantics without a formal amendment. However, implementations MAY extend the contract with additional internal bookkeeping (e.g., sub-class tracking) as long as the normative interface is preserved.
+This EIP defines three classes (`Supply`, `Yield`, `Other`) as the standard
+decomposition; as stated under [the class table](#the-multiplierclass-enum),
+implementations SHOULD NOT add further enum values without a formal amendment
+to this EIP, since that would break the `composeUiMultiplier` product
+semantics and the `IERC8056Composite` interface ID (see the
+[Scaling-class enum](#scaling-class-enum)). Implementations MAY extend
+contracts with additional internal bookkeeping (e.g., sub-class tracking) as
+long as the normative interface is preserved.
 
 ## Rationale
 
@@ -331,10 +366,13 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     }
 
     error CompositeOverflow();
+    error NoticePeriodTooShort();
+    error NoticePeriodTooLong();
 
     mapping(MultiplierClass => ClassScalingState) private _classScaling;
     mapping(MultiplierClass => ScalingCheckpoint[]) private _checkpoints;
     mapping(MultiplierClass => uint256[]) private _checkpointTimestamps;
+    uint256 private _minNoticePeriod;
 
     function uiMultiplier() public view returns (uint256) {
         return UIScalingMath.composeUiMultiplier(
@@ -367,9 +405,10 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     }
 
     // setUIMultiplier(scalingClass, newMultiplier, effectiveAtTimestamp, id, description, uri)
-    // validates future-only scheduling, guards against composite overflow
+    // validates future-only scheduling (plus any issuer-configured minimum
+    // notice), guards against composite overflow
     // (reverts CompositeOverflow instead of an arithmetic panic), replaces any
-    // live pending checkpoint for the class, synthesizes the genesis entry on
+    // live pending checkpoint for the class, synthesizes genesis entries on
     // first use (lazy genesis for upgraded proxies), pushes the new checkpoint,
     // and emits UIScalingFactorUpdated with the Announcement metadata plus the
     // base UIMultiplierUpdated with the projected pending composite.
@@ -378,11 +417,17 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
 
 > **Lazy genesis:** an upgraded vanilla ERC-8056 proxy starts with empty
 > checkpoint histories (`scalingHistoryLength(class) == 0`). No initialization
-> transaction is needed — the first `setUIMultiplier` call on each class
-> bootstraps the genesis checkpoint (`effectiveAt = 0`,
-> `cumulativeMultiplier = 1e18`), after which indexing matches direct deploys.
-> While the history is empty, `classEventAtNonce(class, 0)` returns the
-> synthetic genesis event `{0, 1e18, 0}` instead of reverting (see deviations).
+> transaction is needed — the first `setUIMultiplier` call on ANY class
+> bootstraps genesis checkpoints for every class whose history is still empty
+> (`effectiveAt = 0`, `cumulativeMultiplier = 1e18`; the Supply class inherits
+> the live vanilla multiplier read from the base contract), after which
+> indexing matches direct deploys. Note that `scalingHistoryLength(Supply)`
+> therefore returns 1 after a single Yield-class schedule even though Supply
+> itself was never scheduled. While the history is empty,
+> `classEventAtNonce(class, 0)` returns the synthetic genesis event `{0, 1e18, 0}`
+> instead of reverting (see deviations), and composite reads serve the
+> inherited vanilla slots so the pre-upgrade denomination is preserved from the
+> moment of the upgrade.
 
 ### Capital/Yield wrapper (practical reference)
 
@@ -418,8 +463,12 @@ The issuer (owner of the extension contract) is trusted to:
 - Push Yield-class events accurately (dividend amounts and timing).
 - Not fabricate Yield events (which would inflate coupons).
 - Not withhold Yield events (which would suppress coupons).
+- Attribute events to the correct class: recording dividends as `Other`-class
+  updates still grows the display multiplier but never ticks the yield nonce,
+  so open yield windows would stay locked forever while backing accretes
+  pro-rata. Class integrity is as load-bearing as amount accuracy.
 
-This is identical to the trust model of ERC-8056 itself: the issuer is the source of truth for the UI multiplier. The extension adds transparency (class attribution and checkpoint history) but does not remove the issuer's role.
+This is identical to the trust model of ERC-8056 itself: the issuer is the source of truth for the UI multiplier. The extension adds transparency (class attribution and checkpoint history) but does not remove the issuer's role. Issuers can additionally bound their own discretion by raising `minNoticePeriod` (publicly observable, self-imposed delay before any announcement lands) and routing calls through a timelock, both of which give markets advance on-chain notice of repricing.
 
 ### Front-running `deployOrGet`
 

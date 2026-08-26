@@ -279,33 +279,37 @@ is sound and composable.
 ### 4.2 Upgrading a live vanilla ERC-8056 beacon proxy
 
 An upgraded proxy needs **no initialization transaction** thanks to *lazy
-genesis*: the first `setUIMultiplier` on each class synthesizes that class's
-genesis checkpoint on the fly.
+genesis* plus read-time inheritance of the vanilla slots.
 
 1. **Verify storage layout compatibility.** `ERC8056Composite` inherits
    `ERC8056` and appends all class state after the base layout; the base
    slots (`_uiMultiplier`, `_newUIMultiplier`, `_effectiveAt`) are preserved
-   but unused. Confirm with `forge inspect ERC8056Composite storage-layout`
-   that the base slots are unchanged for your deployed vanilla version.
+   and — until the first schedule — actively served. Confirm with
+   `forge inspect ERC8056Composite storage-layout` that the base slots are
+   unchanged for your deployed vanilla version.
 2. **Point the beacon at the new implementation.** Standard beacon upgrade;
    no init call is required or expected.
-3. **Done — but note the post-upgrade view semantics:**
+3. **Done — note the post-upgrade view semantics:**
+   - **The vanilla display denomination is preserved from the moment of the
+     upgrade**, not just after bootstrapping. `uiMultiplier()`,
+     `uiMultiplierAt(ts)`, `newUIMultiplier()` and `effectiveAt()` serve the
+     inherited vanilla base slots until class history exists, so the
+     conversion/balance views (`toUIAmount`, `fromUIAmount`, `balanceOfUI`,
+     `totalSupplyUI`) show exactly what the vanilla token showed, including a
+     live pending vanilla update observed through `newUIMultiplier()` /
+     `effectiveAt()`. Only a proxy that was never initialized under the
+     vanilla implementation reads as neutral.
    - `scalingHistoryLength(class)` returns **0** until the first schedule on
-     that class bootstraps genesis.
+     ANY class runs; that single call bootstraps genesis checkpoints for every
+     still-empty class at once (`scalingHistoryLength(Supply)` will therefore
+     be 1 afterwards even if Supply itself was never scheduled).
    - `classEventAtNonce(class, 0)` returns a **synthetic genesis event**
      `{timestamp: 0, cumulativeMultiplier: 1e18, multiplierRatio: 0}` while the
      history is empty (matching direct deploys), so degenerate wrapper windows
      `(0, 0)` stay readable. Nonces > 0 revert until the first schedule lands.
-    - **The vanilla display denomination is preserved on upgrade.** On the first
-      schedule after an upgrade, the composite seeds the **Supply** class's genesis
-      checkpoint with the live vanilla `_uiMultiplier` read from the base contract,
-      so the pre-upgrade UI denomination carries over automatically — no manual
-      re-scheduling is required for the *active* multiplier. Until that first
-      schedule runs, reads reflect the neutral (1e18) base value, which is identical
-      for any token whose pre-upgrade multiplier is itself neutral. Only a *pending*
-      vanilla update is dropped at the upgrade boundary (the base pending slots are
-      intentionally unused); issuers who had a pending non-neutral update scheduled
-      should re-issue it as a Supply-class announcement post-upgrade.
+   - A vanilla pending update that has NOT landed by the time of the first
+     schedule is not converted into a class checkpoint; issuers should re-issue
+     it as a Supply-class announcement post-upgrade if it was meant to land.
 4. After the first schedule per class, indexing matches direct deploys
    exactly.
 
@@ -316,6 +320,12 @@ genesis checkpoint on the fly.
   on-chain-visible notice and makes the announcement window auditable. A
   delay of at least one settlement cycle is recommended for Yield-class
   pushes, since windows price against these events.
+- **Consider raising `minNoticePeriod`.** The issuer can call
+  `setMinNoticePeriod(seconds)` (capped at 3650 days) to enforce an on-chain
+  minimum announcement window for every future schedule, bounding its own
+  power to reprice open yield windows with near-zero notice. Default is 0,
+  which keeps vanilla-compatible immediate scheduling; anything above 0 is a
+  public, self-imposed trust signal integrators can check.
 - **Announcement metadata discipline.** Always populate `id`, `description`,
   and `uri` in the 6-arg setter. `id` should be stable and unique per event
   (e.g. the dividend record date); `uri` should point to the press release or

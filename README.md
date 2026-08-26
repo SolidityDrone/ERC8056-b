@@ -121,7 +121,7 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 
 | Interface | Methods |
 |-----------|---------|
-| `IERC8056Composite` | per-class `uiScalingFactor*`, `uiMultiplierAt` overloads, `uiMultiplierAtNonce` overloads, pending/history views, `getClassNonce(MultiplierClass)`, `classEventAtNonce(MultiplierClass, uint256)`, 6-arg `setUIMultiplier(class, newMultiplier, effectiveAtTimestamp, id, description, uri)`, `cancelPendingUIMultiplier(MultiplierClass)` |
+| `IERC8056Composite` | per-class `uiScalingFactor*`, `uiMultiplierAt` overloads, `uiMultiplierAtNonce` overloads, pending/history views, `getClassNonce(MultiplierClass)`, `classEventAtNonce(MultiplierClass, uint256)`, 6-arg `setUIMultiplier(class, newMultiplier, effectiveAtTimestamp, id, description, uri)`, `cancelPendingUIMultiplier(MultiplierClass)`, optional issuer notice period (`minNoticePeriod()`/`setMinNoticePeriod(uint256)`) |
 | `ERC8056Composite` | per-class `toUIAmount(raw, class)`, `toUIAmountAt`, `fromUIAmount` |
 | `UIScalingMath` | `composeUiMultiplier(Supply, Yield, Other)` |
 
@@ -159,6 +159,8 @@ but a few base-interface reads/writes have composite semantics:
 | 3 | Base `effectiveAt()` | the single pending effective timestamp | earliest pending `effectiveAt` across classes; if none is live, the most recent effective event timestamp (`0` only if nothing was ever scheduled) |
 | 4 | Base cancel (`cancelPendingUIMultiplier()`) | cancels the single pending update | cancels **every** class with a live pending announcement (vanilla behavior generalized); reverts `NothingToCancel` when none pending |
 | 5 | Composite-at-nonce `uiMultiplierAtNonce(n)` | n/a (new view) | per-class clamping: each class uses `min(nonce, classNonce)`, `0 → 1e18`; saturates at `type(uint256).max` instead of reverting for extreme factors or large nonces; converges to `uiMultiplier()` |
+| 6 | Reads between a proxy upgrade and the first schedule | vanilla values from its own slots | composite reads serve the inherited vanilla slots (denomination + pending preserved); history/nonce views stay empty until genesis is bootstrapped |
+| 7 | Schedule notice | any future timestamp | optional issuer self-restraint: after `setMinNoticePeriod(seconds)` every schedule must be ≥ `minNoticePeriod` away (default 0 = vanilla-compatible; capped at 3650 days) |
 
 ## License
 
