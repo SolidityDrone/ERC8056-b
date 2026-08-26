@@ -340,6 +340,10 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
     // Internals
     // ------------------------------------------------------------------
     function _couponOf(uint256 startNonce, uint256 targetNonce) internal view returns (uint256) {
+        // Target nonce not yet effective: the window is immature (e.g. a freshly-upgraded
+        // composite with no Yield events yet). Price it as principal-protected (coupon 0)
+        // instead of letting the underlying revert `EventNotRecorded` on a missing checkpoint.
+        if (targetNonce > scaledUnderlying.getClassNonce(MultiplierClass.Yield)) return 0;
         uint256 yStart = scaledUnderlying.classEventAtNonce(MultiplierClass.Yield, startNonce).cumulativeMultiplier;
         uint256 yTarget = scaledUnderlying.classEventAtNonce(MultiplierClass.Yield, targetNonce).cumulativeMultiplier;
         if (yTarget <= yStart) return 0;

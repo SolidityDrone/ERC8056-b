@@ -959,9 +959,10 @@ contract ERC8056CompositeTest is ScalingTestBase {
         assertEq(upgraded.uiMultiplier(), 6 * NEUTRAL);
     }
 
-    /// @dev Regression: the composite-at-nonce composition can mix extreme factors
-    ///      from different eras; it must saturate at type(uint256).max rather than
-    ///      panic-overflowing, while the live composite path keeps exact math.
+    /// @dev Regression: the composite-at-nonce composition mixes factors from
+    ///      divergent eras; extreme combinations saturate at type(uint256).max in
+    ///      the VIEW rather than panicking or reverting, while every individual
+    ///      schedule still passes the schedule-time overflow guard.
     function test_UiMultiplierAtNonce_SaturatesInsteadOfReverting() public {
         // era 1: Supply = 1e38
         _scheduleScalingFactor(MultiplierClass.Supply, 1e38, block.timestamp + 1 hours);
@@ -969,7 +970,8 @@ contract ERC8056CompositeTest is ScalingTestBase {
         // era 2: markdown Supply to 1
         _scheduleScalingFactor(MultiplierClass.Supply, 1, block.timestamp + 1 hours);
         vm.warp(block.timestamp + 2 hours);
-        // grow Yield to 1e58: composite of era-1 Supply with Yield overflows
+        // grow Yield to 1e58: safe at schedule time (Supply is marked down to 1),
+        // but era-1 Supply (1e38) x era-3 Yield (1e58) overflows the composite
         _scheduleScalingFactor(MultiplierClass.Yield, 1e58, block.timestamp + 1 hours);
         vm.warp(block.timestamp + 2 hours);
 
@@ -978,8 +980,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
         // era 1: Supply 1e38 x Yield 1e58 x Other 1e18 overflows -> saturated
         assertEq(token.uiMultiplierAtNonce(1), type(uint256).max);
-        // era 2 (current): Supply 1 -> composite exactly representable
-        // (1 * 1e58 * 1e18 / 1e36 = 1e40)
+        // era 2 (current): Supply 1 -> composite exactly representable (1e40)
         assertEq(token.uiMultiplierAtNonce(2), 1e40);
         assertEq(token.uiMultiplierAtNonce(99), token.uiMultiplier());
         // live path unaffected: active Supply is 1, so composite is exact
@@ -990,14 +991,28 @@ contract ERC8056CompositeTest is ScalingTestBase {
     // Schedule-time composite overflow guard                                       //
     //==============================================================================//
     function test_Schedule_CompositeOverflowRevertsCustomErrorNotPanic() public {
-        uint256 huge = 1e38;
+        uint256 big = 1e38;
         vm.startPrank(owner);
-        token.setUIMultiplier(MultiplierClass.Supply, huge, block.timestamp + 1 days, "", "", "");
-        token.setUIMultiplier(MultiplierClass.Yield, huge, block.timestamp + 2 days, "", "", "");
-        // pending composite would be 1e38 * 2e38 / 1e18 -> overflow
+        token.setUIMultiplier(MultiplierClass.Supply, big, block.timestamp + 1 days, "", "", "");
+        token.setUIMultiplier(MultiplierClass.Yield, big, block.timestamp + 2 days, "", "", "");
+        // pending composite ~1e58; scheduling Other = 2e37 makes the next composite
+        // ~2e77 > 2^256, which the corrected guard must reject with a clear error.
         vm.expectRevert(ERC8056Composite.CompositeOverflow.selector);
-        token.setUIMultiplier(MultiplierClass.Other, 2e38, block.timestamp + 3 days, "", "", "");
+        token.setUIMultiplier(MultiplierClass.Other, 2e37, block.timestamp + 3 days, "", "", "");
         vm.stopPrank();
+    }
+
+    /// @dev The corrected (1e18-scaled) guard must NOT reject valid extreme schedules
+    ///      that stay safely below 2^256: Supply=1e20, Other=1e20, Yield=1e60 -> ~1e64.
+    function test_Schedule_ValidExtremeCompositeAccepted() public {
+        uint256 effectiveAt = block.timestamp + 1 days;
+        vm.startPrank(owner);
+        token.setUIMultiplier(MultiplierClass.Supply, 1e20, effectiveAt, "", "", "");
+        token.setUIMultiplier(MultiplierClass.Other, 1e20, effectiveAt, "", "", "");
+        // Must succeed (no revert): this previously failed under the off-by-1e18 guard.
+        token.setUIMultiplier(MultiplierClass.Yield, 1e60, effectiveAt, "", "", "");
+        vm.stopPrank();
+        assertEq(token.newUIMultiplier(MultiplierClass.Yield), 1e60);
     }
 
     function test_Schedule_OverflowGuardDoesNotBlockReasonableSchedules() public {

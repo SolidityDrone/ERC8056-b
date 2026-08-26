@@ -300,7 +300,9 @@ genesis checkpoint on the fly.
       schedule after an upgrade, the composite seeds the **Supply** class's genesis
       checkpoint with the live vanilla `_uiMultiplier` read from the base contract,
       so the pre-upgrade UI denomination carries over automatically — no manual
-      re-scheduling is required for the *active* multiplier. Only a *pending*
+      re-scheduling is required for the *active* multiplier. Until that first
+      schedule runs, reads reflect the neutral (1e18) base value, which is identical
+      for any token whose pre-upgrade multiplier is itself neutral. Only a *pending*
       vanilla update is dropped at the upgrade boundary (the base pending slots are
       intentionally unused); issuers who had a pending non-neutral update scheduled
       should re-issue it as a Supply-class announcement post-upgrade.

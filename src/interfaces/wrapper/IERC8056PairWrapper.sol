@@ -101,8 +101,9 @@ interface IERC8056PairWrapper {
     function rawLockedOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
 
     /// @dev Remaining raw backing of window (start, target):
-    ///      - Pre-maturity (current yield nonce < targetNonce): both legs redeem 1:1
-    ///        via {unwrap}, so backing = capitalSupply + yieldSupply.
+    ///      - Pre-maturity (current yield nonce < targetNonce): solo redemptions are
+    ///        gated, so each outstanding pair holds equal capital/yield amounts and only the
+    ///        combined {unwrap} is exercisable at 1:1; backing = min(capitalSupply, yieldSupply).
     ///      - Matured (current yield nonce >= targetNonce): capitalSupply * capitalShare
     ///        + yieldSupply * coupon (frozen pricing).
     ///      0 for a nonexistent pair. This is the truthful per-window solvency figure.

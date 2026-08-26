@@ -126,7 +126,7 @@ list them on its auction or forward them to a vault.
 | `unwrapYield(amount, start, target)` | burn `amount` yield leg for `amount * coupon` |
 | `unwrapCapital(amount, start, target)` | burn `amount` capital leg for `amount * (1 - coupon)` |
 | `rawLocked()` | total raw underlying locked across all windows |
-| `windowBackingOf(start, target)` | **truthful** raw backing of one window: pre-maturity (nonce < target) both legs redeem 1:1, so backing = `capitalSupplyOf + yieldSupplyOf`; post-maturity it is frozen at `capitalSupplyOf * capitalShare + yieldSupplyOf * coupon`. 0 for a nonexistent window |
+| `windowBackingOf(start, target)` | **truthful** raw backing of one window: pre-maturity (nonce < target) solo redemptions are gated so each pair holds equal capital/yield amounts and only the combined `unwrap` is exercisable at 1:1 — backing = `min(capitalSupplyOf, yieldSupplyOf)`; post-maturity it is frozen at `capitalSupplyOf * capitalShare + yieldSupplyOf * coupon`. 0 for a nonexistent window |
 | `rawLockedOf(start, target)` | **DEPRECATED** — returns the window's outstanding capital supply, which diverges from raw backing after any solo `unwrapYield`. Use `windowBackingOf` instead |
 
 Both solo redemption functions revert `Locked` while `currentNonce() < target`.

@@ -240,7 +240,13 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         // saturating arithmetic so the guard itself can never panic.
         uint256 pending = _compositeFromPending();
         uint256 otherComposite = _safeMulDiv(pending, UIScalingMath.MULTIPLIER_DECIMALS, _pendingFactor(scalingClass));
-        if (newMultiplier > type(uint256).max / otherComposite) revert CompositeOverflow();
+        // The composite after this class lands is `otherComposite * newMultiplier / 1e18`,
+        // so reject when that exceeds 2^256. When otherComposite <= 1e18 the threshold
+        // quotient would itself exceed 2^256, meaning no factor can overflow — cap it.
+        uint256 threshold = otherComposite > UIScalingMath.MULTIPLIER_DECIMALS
+            ? Math.mulDiv(type(uint256).max, UIScalingMath.MULTIPLIER_DECIMALS, otherComposite)
+            : type(uint256).max;
+        if (newMultiplier > threshold) revert CompositeOverflow();
 
         if (hasPendingUIMultiplier(scalingClass)) {
             history.pop();

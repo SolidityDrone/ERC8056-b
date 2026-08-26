@@ -523,18 +523,22 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         // schedule a pending dividend: target nonce recorded but not yet effective
         vm.prank(owner);
         underlying.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 10 days, "", "", "");
-        vm.expectRevert(bytes4(keccak256("EventNotEffective()")));
-        wrapper.previewUnwrapYield(RAW_STAKE, start, target);
-        vm.expectRevert(bytes4(keccak256("EventNotEffective()")));
-        wrapper.previewUnwrapCapital(RAW_STAKE, start, target);
+        // Immature window quotes principal-protected pricing: coupon 0 -> yield leg
+        // worth 0 raw, capital leg worth the full amount. Solo redemptions still
+        // revert `Locked` until maturity.
+        assertEq(wrapper.previewUnwrapYield(RAW_STAKE, start, target), 0);
+        assertEq(wrapper.previewUnwrapCapital(RAW_STAKE, start, target), RAW_STAKE);
+        vm.prank(alice);
+        vm.expectRevert(IERC8056PairWrapper.Locked.selector);
+        wrapper.unwrapYield(RAW_STAKE, start, target);
     }
 
     function test_previewSolo_revertsWhenTargetNotRecorded() public {
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 1); // pair (0,1), nothing scheduled
-        vm.expectRevert(bytes4(keccak256("EventNotRecorded()")));
-        wrapper.previewUnwrapYield(RAW_STAKE, start, target);
-        vm.expectRevert(bytes4(keccak256("EventNotRecorded()")));
-        wrapper.previewUnwrapCapital(RAW_STAKE, start, target);
+        // Immature window (target nonce not yet effective): quotes principal-protected
+        // pricing instead of a confusing `EventNotRecorded` from a missing checkpoint.
+        assertEq(wrapper.previewUnwrapYield(RAW_STAKE, start, target), 0);
+        assertEq(wrapper.previewUnwrapCapital(RAW_STAKE, start, target), RAW_STAKE);
     }
 
     function test_previewCapitalUI_supplyDisplayOnly() public {
@@ -843,6 +847,32 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         _setYieldFactor(HALF, 1 days); // nonce 2, Y falls -> coupon 0
 
         assertEq(wrapper.windowBackingOf(1, 2), RAW_STAKE, "principal protected -> full backing");
+    }
+
+    /// @dev Regression for fresh/upgraded composite with no Yield events yet: wrapping a
+    ///      real window (lockNonces > 0) must NOT brick on a missing checkpoint. The immature
+    ///      window prices at 1:1 (coupon 0) so the combined `unwrap` pays back exactly the
+    ///      stake, while solo redemptions stay gated by `Locked`.
+    function test_wrapLockedOnFreshComposite_pricesOneToOne() public {
+        // Underlying has zero Yield events at setUp: currentNonce() == 0.
+        assertEq(wrapper.currentNonce(), 0);
+        (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 2);
+        assertEq(target, 2);
+
+        // Immature window: coupon 0, both legs redeem 1:1 via unwrap.
+        (uint256 capOut, uint256 yldOut) = wrapper.previewUnwrap(RAW_STAKE, start, target);
+        assertEq(capOut, RAW_STAKE);
+        assertEq(yldOut, 0);
+
+        // Solo redemptions remain gated until the target nonce matures.
+        vm.prank(alice);
+        vm.expectRevert(IERC8056PairWrapper.Locked.selector);
+        wrapper.unwrapYield(RAW_STAKE, start, target);
+
+        // Combined unwrap pays back the full stake, leaving the vault drained.
+        vm.prank(alice);
+        wrapper.unwrap(RAW_STAKE, start, target);
+        assertEq(underlying.balanceOf(address(wrapper)), 0);
     }
 
     //==============================================================================//
