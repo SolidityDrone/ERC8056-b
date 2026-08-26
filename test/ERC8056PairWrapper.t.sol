@@ -12,6 +12,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC8056} from "../src/ERC8056.sol";
 
@@ -31,6 +32,35 @@ contract FeeOnTransferMock is ERC20 {
         uint256 fee = value / 10;
         super._update(from, to, value - fee);
         super._update(from, address(0), fee); // burn the fee
+    }
+}
+
+/// @dev Mock ERC-20 whose admin can enable an outbound 10% fee (simulating a
+///      token that adopts fees AFTER the wrapper already accepted it as clean).
+contract OutboundFeeOnTransitionMock is ERC20 {
+    address public taxedFrom;
+
+    constructor() ERC20("LateFeeToken", "LFEE") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function enableOutboundFee(address from) external {
+        taxedFrom = from;
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (from == address(0) || to == address(0)) {
+            super._update(from, to, value);
+            return;
+        }
+        if (from == taxedFrom && to != address(0)) {
+            uint256 fee = value / 10;
+            super._update(from, to, value - fee);
+            return;
+        }
+        super._update(from, to, value);
     }
 }
 
@@ -778,6 +808,97 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
 
         assertEq(fot.balanceOf(address(fotWrapper)), 0);
         assertEq(fotWrapper.rawLocked(), 0);
+    }
+
+    //==============================================================================//
+    // ERC-165 interface detection                                                  //
+    //==============================================================================//
+    function test_supportsInterface_wrapperInterface() public view {
+        assertTrue(wrapper.supportsInterface(type(IERC8056PairWrapper).interfaceId));
+        assertTrue(wrapper.supportsInterface(0x01ffc9a7)); // ERC-165 itself
+        assertFalse(wrapper.supportsInterface(0xffffffff));
+        assertFalse(wrapper.supportsInterface(0xdeadbeef));
+    }
+
+    function test_supportsInterface_legTokens() public {
+        _wrapLocked(alice, RAW_STAKE, 1);
+        (IERC20 capital, IERC20 yieldLeg) = (wrapper.capitalToken(0, 1), wrapper.yieldToken(0, 1));
+        // LegToken is plain ERC-20: it must expose standard ERC-165 probing
+        assertTrue(IERC165(address(capital)).supportsInterface(0x01ffc9a7)); // ERC-165
+        assertTrue(IERC165(address(yieldLeg)).supportsInterface(0x01ffc9a7)); // ERC-165
+        assertFalse(IERC165(address(capital)).supportsInterface(0xdeadbeef));
+    }
+
+    //==============================================================================//
+    // Outbound fee-on-transfer rejection (transitions AFTER adoption)              //
+    //==============================================================================//
+
+    /// @dev The underlying is accepted as clean at wrap time, then its admin
+    ///      enables an outbound fee. Payouts must revert instead of silently
+    ///      delivering less than the previews promise.
+    function test_unwrap_outboundFeeTransition_reverts() public {
+        OutboundFeeOnTransitionMock late = new OutboundFeeOnTransitionMock();
+        ERC8056PairWrapper lateWrapper = new ERC8056PairWrapper(IERC20(address(late)), underlying, "Tesla", "Tesla");
+
+        _advanceNonce(1 days); // nonce 1 so the later DOUBLE tick makes a real coupon
+        late.mint(alice, RAW_STAKE);
+        vm.prank(alice);
+        late.approve(address(lateWrapper), type(uint256).max);
+        vm.prank(alice);
+        lateWrapper.wrap(RAW_STAKE, 1); // pair (1,2)
+
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2 -> coupon(1,2) = 0.5
+
+        // preview promises exactly RAW_STAKE for the combined burn
+        (uint256 capOut, uint256 yldOut) = lateWrapper.previewUnwrap(RAW_STAKE, 1, 2);
+        assertEq(capOut + yldOut, RAW_STAKE);
+
+        // then the token turns hostile on outbound transfers
+        late.enableOutboundFee(address(lateWrapper));
+
+        vm.prank(alice);
+        vm.expectRevert(IERC8056PairWrapper.FeeOnTransferNotSupported.selector);
+        lateWrapper.unwrap(RAW_STAKE, 1, 2);
+    }
+
+    function test_unwrapYield_outboundFeeTransition_reverts() public {
+        OutboundFeeOnTransitionMock late = new OutboundFeeOnTransitionMock();
+        ERC8056PairWrapper lateWrapper = new ERC8056PairWrapper(IERC20(address(late)), underlying, "Tesla", "Tesla");
+
+        _advanceNonce(1 days); // nonce 1 so the later DOUBLE tick makes a real coupon
+        late.mint(alice, RAW_STAKE);
+        vm.prank(alice);
+        late.approve(address(lateWrapper), type(uint256).max);
+        vm.prank(alice);
+        lateWrapper.wrap(RAW_STAKE, 1); // pair (1,2)
+
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2 -> coupon(1,2) = 0.5 // coupon = 0.5
+
+        late.enableOutboundFee(address(lateWrapper));
+
+        vm.prank(alice);
+        vm.expectRevert(IERC8056PairWrapper.FeeOnTransferNotSupported.selector);
+        lateWrapper.unwrapYield(50 ether, 1, 2);
+    }
+
+    function test_unwrapCapital_outboundFeeTransition_reverts() public {
+        OutboundFeeOnTransitionMock late = new OutboundFeeOnTransitionMock();
+        ERC8056PairWrapper lateWrapper = new ERC8056PairWrapper(IERC20(address(late)), underlying, "Tesla", "Tesla");
+
+        _advanceNonce(1 days); // nonce 1 so the later DOUBLE tick makes a real coupon
+        late.mint(alice, RAW_STAKE);
+        vm.prank(alice);
+        late.approve(address(lateWrapper), type(uint256).max);
+        vm.prank(alice);
+        lateWrapper.wrap(RAW_STAKE, 1); // pair (1,2)
+
+        _applyYieldDelta(DOUBLE, 1 days); // nonce 2 -> coupon(1,2) = 0.5 // coupon = 0.5
+
+        late.enableOutboundFee(address(lateWrapper));
+
+        vm.prank(alice);
+        vm.expectRevert(IERC8056PairWrapper.FeeOnTransferNotSupported.selector);
+        lateWrapper.unwrapCapital(60 ether, 1, 2);
     }
 
     //==============================================================================//

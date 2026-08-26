@@ -45,13 +45,17 @@ library UIScalingMath {
     }
 
     /// @dev Raw principal leg. Only Yield accretion dilutes capital in raw terms.
+    ///      When the yield factor DECREASED since stake the naive quotient would
+    ///      exceed the deposit (economically unsound: legs would sum to more than
+    ///      was staked); clamp so capital + yield always conserves rawStaked.
     function capitalRaw(uint256 rawStaked, uint256 yieldFactorAtStake, uint256 yieldFactorCurrent)
         internal
         pure
         returns (uint256)
     {
         if (yieldFactorCurrent == 0) revert ZeroFactor();
-        return Math.mulDiv(rawStaked, yieldFactorAtStake, yieldFactorCurrent);
+        uint256 capital = Math.mulDiv(rawStaked, yieldFactorAtStake, yieldFactorCurrent);
+        return capital > rawStaked ? rawStaked : capital;
     }
 
     /// @dev Raw yield leg (remainder after capital). Returns 0 when the yield

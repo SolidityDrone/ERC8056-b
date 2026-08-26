@@ -53,13 +53,14 @@ Protocols should **never** hardcode or guess wrapper addresses. Ask the
 registry instead.
 
 ```solidity
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC8056PairWrapperRegistry} from "../src/interfaces/wrapper/IERC8056PairWrapperRegistry.sol";
 import {IERC8056PairWrapper} from "../src/interfaces/wrapper/IERC8056PairWrapper.sol";
 
 IERC8056PairWrapperRegistry registry = /* canonical registry address */;
 
 // Read-only: does a wrapper exist for this underlying?
-IERC8056PairWrapper w = registry.wrapperFor(rawToken);
+IERC8056PairWrapper w = registry.wrapperFor(IERC20(rawToken));
 if (address(w) != address(0)) {
     // use it
 }
@@ -71,10 +72,10 @@ call returns the same address. Identity is keyed by `underlying` only.
 
 ```solidity
 IERC8056PairWrapper w = registry.deployOrGet(
-    rawToken,          // IERC20 underlying
-    rawToken,          // scaledUnderlying: MUST be the same contract (extension == token)
-    "Tesla",           // display name  — FALLBACK ONLY
-    "Tesla"            // display symbol — FALLBACK ONLY
+    IERC20(rawToken),              // underlying
+    IERC8056Composite(address(rawToken)), // scaledUnderlying: MUST be the same contract (extension == token)
+    "Tesla",                       // display name  — FALLBACK ONLY
+    "Tesla"                        // display symbol — FALLBACK ONLY
 );
 ```
 
@@ -218,13 +219,25 @@ window.
   Each `LegToken` inherits its **decimals from the underlying** token, so leg
   amounts line up 1:1 with raw units regardless of the underlying's precision.
 - **Approvals.** `wrap` pulls `underlying` via `transferFrom` — approve the
-  wrapper (or registry-deployed wrapper) before calling. The transfer is
+  wrapper (or registry-deployed wrapper) before calling. Both directions are
   balance-checked: fee-on-transfer (FoT) tokens revert
-  `FeeOnTransferNotSupported`.
+  `FeeOnTransferNotSupported`, on the way in at `wrap` time and on every payout.
 - **One EIP, multiple contracts.** The registry + wrapper are optional consumer
   surfaces of the same ERC-8056 improvement; the extension implementation
   (`ERC8056Composite`) remains the core asset, and vanilla `ERC8056` is its
   spec-compatible reference/base layout.
+- **Pair creation is permissionless.** Anyone can create a new window with a
+  minimal `wrap` (even 1 wei), deploying two LegTokens and appending to the
+  wrapper's window enumeration. This is gas-costly for the caller (two contract
+  deployments) and harmless for solvency, but indexers/AMMs should NOT iterate
+  `pairAt(0..pairCount)` blindly — enumerate windows off-chain from
+  `Wrapped` events instead, or apply your own quality filters.
+- **Assume no FoT, ever.** Inbound fee-on-transfer is rejected at wrap time,
+  and outbound transfers are balance-checked so a token that adopts fees after
+  adoption reverts payouts (`FeeOnTransferNotSupported`) instead of silently
+  underpaying. Either way, an FoT underlying makes its wrapper unusable by
+  design — treat that as an asset-quality red flag rather than a recoverable
+  state.
 
 ## 7. References
 

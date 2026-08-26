@@ -110,7 +110,7 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 |-----------|---------|
 | `IERC8056` | `uiMultiplier()`, `UIMultiplierUpdated`, `TransferWithUIAmount` |
 | `IERC8056NewUIMultiplier` | `newUIMultiplier()`, `effectiveAt()` (spec ID `0x4bd27648`, unchanged from vanilla ERC-8056) |
-| `IERC8056Cancel` | `cancelPendingUIMultiplier()`, `UIMultiplierCancelled` (split out of `IERC8056NewUIMultiplier`) |
+| `IERC8056Cancel` | `cancelPendingUIMultiplier()`, `UIMultiplierCancelled` (addition of this EIP — vanilla ERC-8056 has no cancel entrypoint) |
 | `IERC8056Conversion` | `toUIAmount(uint256)`, `fromUIAmount(uint256)` |
 | `IERC8056Balances` | `balanceOfUI(address)`, `totalSupplyUI()` |
 

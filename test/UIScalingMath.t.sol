@@ -28,10 +28,12 @@ contract UIScalingMathTest is ScalingTestBase {
 
     function test_composeUiMultiplier_orderIndependent() public pure {
         assertEq(
-            UIScalingMath.composeUiMultiplier(DOUBLE, 3e18, 1.5e18), UIScalingMath.composeUiMultiplier(1.5e18, DOUBLE, 3e18)
+            UIScalingMath.composeUiMultiplier(DOUBLE, 3e18, 1.5e18),
+            UIScalingMath.composeUiMultiplier(1.5e18, DOUBLE, 3e18)
         );
         assertEq(
-            UIScalingMath.composeUiMultiplier(DOUBLE, 3e18, 1.5e18), UIScalingMath.composeUiMultiplier(3e18, 1.5e18, DOUBLE)
+            UIScalingMath.composeUiMultiplier(DOUBLE, 3e18, 1.5e18),
+            UIScalingMath.composeUiMultiplier(3e18, 1.5e18, DOUBLE)
         );
         assertEq(UIScalingMath.composeUiMultiplier(DOUBLE, 3e18, 1.5e18), 9e18);
     }
@@ -66,17 +68,28 @@ contract UIScalingMathTest is ScalingTestBase {
         assertEq(UIScalingMath.yieldLegRaw(RAW_STAKE, RAW_STAKE), 0);
     }
 
+    /// @dev Principal protection done right: when the yield factor decreased
+    ///      since stake, the capital leg is CLAMPED to the staked amount (not
+    ///      inflated above it) and the yield leg saturates to 0, so the legs
+    ///      always conserve the deposit exactly.
+    function test_capitalRaw_clampsToStakeWhenYieldFactorDecreased() public pure {
+        uint256 capital = UIScalingMath.capitalRaw(RAW_STAKE, DOUBLE, NEUTRAL);
+        assertEq(capital, RAW_STAKE, "capital must never exceed the stake");
+        assertEq(UIScalingMath.yieldLegRaw(RAW_STAKE, capital), 0);
+    }
+
     function test_yieldGrowthSinceStake() public pure {
         assertEq(UIScalingMath.yieldGrowthSinceStake(NEUTRAL, 3e18), 3e18);
     }
 
     /// @dev Principal protection: when the yield factor decreased since stake,
-    ///      capitalRaw exceeds rawStaked and the yield leg must saturate to 0
-    ///      instead of panicking on underflow.
+    ///      the capital leg is clamped to the stake and the yield leg saturates
+    ///      to 0 instead of panicking on underflow.
     function test_yieldLegRaw_saturatesToZeroWhenYieldFactorDecreased() public pure {
-        // capitalRaw = 100e18 * 2e18 / 1e18 = 200e18 > rawStaked
+        // pre-clamp would give 100e18 * 2e18 / 1e18 = 200e18 > rawStaked;
+        // clamped so that capital + yield always conserves the deposit.
         uint256 capital = UIScalingMath.capitalRaw(RAW_STAKE, DOUBLE, NEUTRAL);
-        assertEq(capital, 200 ether);
+        assertEq(capital, RAW_STAKE);
         assertEq(UIScalingMath.yieldLegRaw(RAW_STAKE, capital), 0);
     }
 
@@ -113,11 +126,10 @@ contract UIScalingMathTest is ScalingTestBase {
     /// @dev When the yield factor grew since stake (current >= atStake), the
     ///      capital leg can never exceed the stake and the legs must conserve
     ///      capitalRaw + yieldLegRaw == rawStaked exactly.
-    function testFuzz_legConservation_whenYieldGrew(
-        uint256 rawStaked,
-        uint256 factorAtStake,
-        uint256 growth
-    ) public pure {
+    function testFuzz_legConservation_whenYieldGrew(uint256 rawStaked, uint256 factorAtStake, uint256 growth)
+        public
+        pure
+    {
         rawStaked = bound(rawStaked, 0, 1e30);
         factorAtStake = bound(factorAtStake, MIN_FACTOR, MAX_FACTOR);
         growth = bound(growth, 0, MAX_FACTOR - MIN_FACTOR);
@@ -129,6 +141,26 @@ contract UIScalingMathTest is ScalingTestBase {
         uint256 yieldLeg = UIScalingMath.yieldLegRaw(rawStaked, capital);
         assertEq(yieldLeg, rawStaked - capital, "yield leg is not the exact remainder");
         assertEq(capital + yieldLeg, rawStaked, "legs do not conserve the staked amount");
+    }
+
+    /// @dev Legs must conserve the stake in EVERY direction — including yield
+    ///      decreases (reverse events), where an unclamped capital leg would
+    ///      claim more than was deposited (economically unsound split).
+    function testFuzz_legConservation_anyDirection(uint256 rawStaked, uint256 fS, uint256 fC) public pure {
+        rawStaked = bound(rawStaked, 0, 1e30);
+        fS = bound(fS, MIN_FACTOR, MAX_FACTOR);
+        fC = bound(fC, MIN_FACTOR, MAX_FACTOR);
+
+        uint256 capital = UIScalingMath.capitalRaw(rawStaked, fS, fC);
+        uint256 yieldLeg = UIScalingMath.yieldLegRaw(rawStaked, capital);
+
+        assertLe(capital, rawStaked, "capital exceeds stake");
+        assertEq(capital + yieldLeg, rawStaked, "legs do not conserve the staked amount");
+
+        // and in the reversed-time direction too
+        uint256 swappedCapital = UIScalingMath.capitalRaw(rawStaked, fC, fS);
+        assertLe(swappedCapital, rawStaked, "reversed capital exceeds stake");
+        assertEq(swappedCapital + UIScalingMath.yieldLegRaw(rawStaked, swappedCapital), rawStaked);
     }
 
     /// @dev toUIAmount -> fromUIAmount must recover the raw amount within 1 wei

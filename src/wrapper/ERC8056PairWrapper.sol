@@ -7,6 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {IERC8056Composite} from "../interfaces/extension/IERC8056Composite.sol";
 import {IERC8056PairWrapper} from "../interfaces/wrapper/IERC8056PairWrapper.sol";
 import {MultiplierClass} from "../interfaces/extension/IERC8056MultiplierClass.sol";
@@ -40,10 +41,12 @@ import {LegToken} from "./LegToken.sol";
  *  integration surface protocols code against.
  *
  *  @dev Assumes the underlying is a standard ERC-20 with no fee-on-transfer
- *       and no rebasing. Fee-on-transfer tokens are REJECTED at wrap time via
- *       {IERC8056PairWrapper.FeeOnTransferNotSupported} (balance-delta check).
+ *       and no rebasing. Fee-on-transfer is REJECTED in both directions via
+ *       {IERC8056PairWrapper.FeeOnTransferNotSupported} balance-delta checks:
+ *       inbound at wrap time, outbound on every payout (catching tokens that
+ *       adopt fees AFTER being accepted as clean).
  */
-contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
+contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard, ERC165 {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable override underlying;
@@ -101,8 +104,9 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
                 legDecimals = d;
             } catch {}
             string memory suffix = string.concat(Strings.toString(startNonce), "-", Strings.toString(targetNonce));
-            pair.capital =
-                new LegToken(string.concat("Capital-", suffix), string.concat("Cap", suffix), address(this), legDecimals);
+            pair.capital = new LegToken(
+                string.concat("Capital-", suffix), string.concat("Cap", suffix), address(this), legDecimals
+            );
             pair.yield =
                 new LegToken(string.concat("Yield-", suffix), string.concat("Yld", suffix), address(this), legDecimals);
             _pairStarts.push(startNonce);
@@ -139,7 +143,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
         _yieldLeg(pair).burn(msg.sender, amount);
         rawLocked -= amount;
 
-        underlying.safeTransfer(msg.sender, amount);
+        _transferOut(msg.sender, amount);
 
         emit Unwrapped(msg.sender, startNonce, targetNonce, amount, capitalRawOut, yieldLegRawOut);
     }
@@ -159,7 +163,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
         _yieldLeg(pair).burn(msg.sender, amount);
         rawLocked -= rawOut;
 
-        underlying.safeTransfer(msg.sender, rawOut);
+        _transferOut(msg.sender, rawOut);
 
         emit UnwrapYield(msg.sender, startNonce, targetNonce, amount, rawOut);
     }
@@ -176,7 +180,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
         _capitalLeg(pair).burn(msg.sender, amount);
         rawLocked -= rawOut;
 
-        underlying.safeTransfer(msg.sender, rawOut);
+        _transferOut(msg.sender, rawOut);
 
         emit UnwrapCapital(msg.sender, startNonce, targetNonce, amount, rawOut);
     }
@@ -280,7 +284,8 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
     }
 
     /// @dev Frozen yield coupon of window (start, target): max(1 - Y_s/Y_t, 0), 1e18 fixed point.
-    ///      Reverts EventNotEffective before the target nonce is effective.
+    ///      Returns 0 while the target nonce is not yet effective (principal-protected
+    ///      immature pricing) or when Y_t <= Y_s — never reverts on immaturity.
     function couponOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
         _requirePair(startNonce, targetNonce);
         return _couponOf(startNonce, targetNonce);
@@ -337,8 +342,28 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
     }
 
     // ------------------------------------------------------------------
+    // ERC-165
+    // ------------------------------------------------------------------
+    /// @dev Integrators discover the wrapper's surface via the registry AND
+    ///      standard interface probing; `IERC8056PairWrapper` is advertised here.
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IERC8056PairWrapper).interfaceId || super.supportsInterface(interfaceId);
+    }
+
+    // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
+    /// @dev Outbound transfers must deliver exactly `amount`: if the underlying
+    ///      skims a fee on the way out (e.g. an asset that adopted fees AFTER
+    ///      being accepted as clean), the recipient would silently receive less
+    ///      than every preview promises. Reject instead; the revert discards the
+    ///      burn and bookkeeping above.
+    function _transferOut(address to, uint256 amount) internal {
+        uint256 balBefore = underlying.balanceOf(to);
+        underlying.safeTransfer(to, amount);
+        if (underlying.balanceOf(to) - balBefore != amount) revert FeeOnTransferNotSupported();
+    }
+
     function _couponOf(uint256 startNonce, uint256 targetNonce) internal view returns (uint256) {
         // Target nonce not yet effective: the window is immature (e.g. a freshly-upgraded
         // composite with no Yield events yet). Price it as principal-protected (coupon 0)

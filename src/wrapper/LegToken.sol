@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 
 /**
  * @title LegToken
@@ -12,21 +13,23 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * representing the yield leg (coupon claim). Both legs are standard,
  * fungible ERC-20 tokens. Minted and burned only by the owning wrapper.
  */
-contract LegToken is ERC20 {
+contract LegToken is ERC20, ERC165 {
     address public immutable minter;
     uint8 private immutable _decimals;
 
     error Unauthorized();
 
-    constructor(string memory name_, string memory symbol_, address minter_, uint8 decimals_)
-        ERC20(name_, symbol_)
-    {
+    constructor(string memory name_, string memory symbol_, address minter_, uint8 decimals_) ERC20(name_, symbol_) {
         minter = minter_;
         _decimals = decimals_;
     }
 
     function decimals() public view override returns (uint8) {
         return _decimals;
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return ERC165.supportsInterface(interfaceId);
     }
 
     function mint(address to, uint256 amount) external {

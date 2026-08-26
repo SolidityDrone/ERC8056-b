@@ -307,6 +307,9 @@ genesis* plus read-time inheritance of the vanilla slots.
      `{timestamp: 0, cumulativeMultiplier: 1e18, multiplierRatio: 0}` while the
      history is empty (matching direct deploys), so degenerate wrapper windows
      `(0, 0)` stay readable. Nonces > 0 revert until the first schedule lands.
+     Be aware that the first schedule backfills this genesis checkpoint
+     retroactively (timestamp 0): timestamp-indexed views at pre-upgrade times
+     go from reverting / neutral to returning the seeded factor.
    - A vanilla pending update that has NOT landed by the time of the first
      schedule is not converted into a class checkpoint; issuers should re-issue
      it as a Supply-class announcement post-upgrade if it was meant to land.

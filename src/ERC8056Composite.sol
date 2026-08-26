@@ -28,6 +28,9 @@ import {ERC8056} from "./ERC8056.sol";
  */
 contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     struct ClassScalingState {
+        /// @dev Never read post-constructor (the active factor is always derived
+        ///      from checkpoint history); the field is kept so the mapping's
+        ///      storage layout stays compatible with already-deployed composites.
         uint256 activeFactor;
         uint256 pendingFactor;
         uint256 effectiveAt;

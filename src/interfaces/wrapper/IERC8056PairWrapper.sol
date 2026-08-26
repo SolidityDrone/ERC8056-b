@@ -111,7 +111,9 @@ interface IERC8056PairWrapper {
 
     // ------------------------------------------------------------------ pricing (frozen)
     /// @dev Frozen yield coupon of window (start, target): max(1 - Y_s/Y_t, 0), 1e18 fixed point.
-    ///      Reverts PairNotFound; reverts EventNotEffective before the target is effective.
+    ///      Returns 0 while the target nonce is not yet effective (principal-protected
+    ///      immature pricing) or when Y_t <= Y_s. Reverts PairNotFound for a
+    ///      never-created window.
     function couponOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
 
     /// @dev Frozen capital share of window (start, target): 1e18 - coupon.
