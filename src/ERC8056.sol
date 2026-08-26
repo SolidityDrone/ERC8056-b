@@ -99,6 +99,13 @@ contract ERC8056 is
     }
 
     function cancelPendingUIMultiplier() external virtual override(IERC8056Cancel) onlyOwner {
+        _cancelVanillaPending();
+    }
+
+    /// @dev Shared vanilla cancellation so storage-compatible extensions can
+    ///      serve exact vanilla cancel semantics on the inherited slots during
+    ///      their migration window (see ERC8056Composite).
+    function _cancelVanillaPending() internal virtual {
         if (_effectiveAt == 0 || block.timestamp >= _effectiveAt) revert NothingToCancel();
 
         uint256 pendingMultiplier = _newUIMultiplier;

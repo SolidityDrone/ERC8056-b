@@ -121,9 +121,7 @@ contract ERC8056Test is Test {
         token.setUIMultiplier(2 * MULTIPLIER_DECIMALS, effectiveAt);
 
         vm.expectEmit(true, true, true, true);
-        emit IERC8056Cancel.UIMultiplierCancelled(
-            2 * MULTIPLIER_DECIMALS, MULTIPLIER_DECIMALS, block.timestamp
-        );
+        emit IERC8056Cancel.UIMultiplierCancelled(2 * MULTIPLIER_DECIMALS, MULTIPLIER_DECIMALS, block.timestamp);
 
         vm.prank(owner);
         token.cancelPendingUIMultiplier();

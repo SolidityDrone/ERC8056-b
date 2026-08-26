@@ -12,7 +12,9 @@ use cases the design enables.
 ### 1.1 What it adds
 
 The extension (`IERC8056Composite`, implemented by `ERC8056Composite`)
-keeps every ERC-8056 function untouched and adds:
+preserves the vanilla ERC-8056 read/ABI surface — reads, conversion and
+balance views behave identically in every regime, including the
+post-upgrade migration window — and adds:
 
 - **A named scaling-class enum** `MultiplierClass { Supply, Yield, Other }`.
   Backward compatible: `Supply = 0`, `Yield = 1`, `Other = 2` appended.
@@ -311,8 +313,15 @@ genesis* plus read-time inheritance of the vanilla slots.
      retroactively (timestamp 0): timestamp-indexed views at pre-upgrade times
      go from reverting / neutral to returning the seeded factor.
    - A vanilla pending update that has NOT landed by the time of the first
-     schedule is not converted into a class checkpoint; issuers should re-issue
-     it as a Supply-class announcement post-upgrade if it was meant to land.
+     schedule is never silently abandoned: the first classed schedule reverts
+     with `VanillaPendingUpdate(vanillaEffectiveAt)` until the pending
+     resolves. Two resolution paths exist — let the vanilla update land at its
+     natural effective time, or cancel it via `cancelPendingUIMultiplier()`
+     (which during the window applies exact vanilla slot semantics). Per-class
+     factor views compose coherently throughout the window:
+     `uiScalingFactor[At](Supply, ts)` reports the inherited vanilla value
+     while Yield/Other stay neutral, so the product of class factors always
+     equals `uiMultiplier()`.
 4. After the first schedule per class, indexing matches direct deploys
    exactly.
 

@@ -819,10 +819,10 @@ contract ERC8056CompositeTest is ScalingTestBase {
         assertEq(token.uiMultiplier(), 2e18);
     }
 
-    /// @dev Documented deviation: with no live pendings, `effectiveAt()` reports the
-    ///      most recent effective event across classes instead of dropping to 0.
-    ///      Genesis-only history still yields 0.
-    function test_EffectiveAt_Composite_NeverResetsBelowLastEvent() public {
+    /// @dev Vanilla idiom restored byte-for-byte: `effectiveAt() != 0 ⇔ an update
+    ///      is incoming`. Once every announcement lands or is cancelled, the view
+    ///      drops back to 0 even though real events remain in history.
+    function test_EffectiveAt_Composite_SentinelRestoredWhenIdle() public {
         assertEq(token.effectiveAt(), 0); // genesis-only history
 
         uint256 tYield = _scheduleMultiplier(MultiplierClass.Yield, DOUBLE, 1 hours);
@@ -830,10 +830,47 @@ contract ERC8056CompositeTest is ScalingTestBase {
 
         vm.warp(tYield); // event activates, nothing left pending
         assertFalse(token.hasPendingUIMultiplier(MultiplierClass.Yield));
-        assertEq(token.effectiveAt(), tYield);
+        assertEq(token.effectiveAt(), 0);
 
         vm.warp(tYield + 30 days);
-        assertEq(token.effectiveAt(), tYield); // never resets to 0 after real events
+        assertEq(token.effectiveAt(), 0); // stays 0 while nothing is pending
+    }
+
+    /// @dev With live pendings on multiple classes, `effectiveAt()` surfaces the
+    ///      earliest timestamp (the moment anything changes).
+    function test_EffectiveAt_Composite_MultiClassPendingSurfacesEarliest() public {
+        uint256 tLater = block.timestamp + 10 hours;
+        uint256 tEarlier = block.timestamp + 2 hours;
+        vm.startPrank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, tLater, "", "", "");
+        token.setUIMultiplier(MultiplierClass.Other, 3 * NEUTRAL, tEarlier, "", "", "");
+        vm.stopPrank();
+
+        assertEq(token.effectiveAt(), tEarlier);
+
+        vm.warp(tEarlier); // Other lands, Yield still pending
+        assertEq(token.effectiveAt(), tLater);
+
+        vm.warp(tLater); // everything landed
+        assertEq(token.effectiveAt(), 0);
+        assertEq(token.uiMultiplier(), 6e18);
+    }
+
+    /// @dev Idle-state parity: with nothing pending anywhere, `newUIMultiplier()`
+    ///      must equal the ACTIVE composite (vanilla clients pricing off it see
+    ///      today's denomination), not any projection of past announcements.
+    function test_NewUIMultiplier_Composite_IdleReturnsActiveComposite() public {
+        uint256 tYield = _scheduleMultiplier(MultiplierClass.Yield, 3 * NEUTRAL, 1 hours);
+        vm.warp(tYield + 1); // lands; still a second stale-era announcement below
+
+        uint256 tSupply = _scheduleMultiplier(MultiplierClass.Supply, DOUBLE, 1 hours);
+        vm.warp(tSupply); // lands; final state Y=3x, S=2x, nothing pending
+
+        assertTrue(!token.hasPendingUIMultiplier(MultiplierClass.Yield));
+        assertTrue(!token.hasPendingUIMultiplier(MultiplierClass.Supply));
+        assertEq(token.uiMultiplier(), 6e18);
+        assertEq(token.newUIMultiplier(), 6e18);
+        assertEq(token.effectiveAt(), 0);
     }
 
     //==============================================================================//
@@ -1016,8 +1053,10 @@ contract ERC8056CompositeTest is ScalingTestBase {
         assertEq(upgraded.toUIAmount(RAW_STAKE), 3 * RAW_STAKE);
         assertEq(upgraded.fromUIAmount(300 ether), RAW_STAKE);
 
-        // Class factor views stay neutral per class until genesis is seeded.
-        assertEq(upgraded.uiScalingFactor(MultiplierClass.Supply), NEUTRAL);
+        // Class factor views compose coherently during the window: Supply carries
+        // the inherited vanilla denomination; other classes stay neutral.
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Supply), 3 * NEUTRAL);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Yield), NEUTRAL);
         assertEq(upgraded.scalingHistoryLength(MultiplierClass.Yield), 0);
         assertEq(upgraded.getClassNonce(MultiplierClass.Yield), 0);
     }
@@ -1192,5 +1231,131 @@ contract ERC8056CompositeTest is ScalingTestBase {
         uint256 back = token.toUIAmount(raw);
         assertLe(back, x);
         assertLe(x - back, 1);
+    }
+
+    //==============================================================================//
+    // Seamless retrocompat: bootstrap guard (R-guard)                              //
+    //==============================================================================//
+
+    function _upgradeVanillaProxyWithPending()
+        internal
+        returns (ERC1967Proxy proxy, ERC8056Composite upgraded, uint256 pendEff)
+    {
+        proxy = new ERC1967Proxy(address(new ERC8056("v", "V", owner)), "");
+        uint256 ts = block.timestamp;
+        pendEff = ts + 30 days;
+        // vanilla layout: slot 5 owner, 6 _uiMultiplier, 7 _newUIMultiplier, 8 _effectiveAt
+        vm.store(address(proxy), bytes32(uint256(5)), bytes32(uint256(uint160(owner))));
+        vm.store(address(proxy), bytes32(uint256(6)), bytes32(uint256(2 * NEUTRAL)));
+        vm.store(address(proxy), bytes32(uint256(7)), bytes32(uint256(3 * NEUTRAL)));
+        vm.store(address(proxy), bytes32(uint256(8)), bytes32(uint256(pendEff)));
+
+        address compositeImpl = address(new ERC8056Composite("v", "V", owner));
+        vm.store(address(proxy), IMPL_SLOT, bytes32(uint256(uint160(compositeImpl))));
+        upgraded = ERC8056Composite(address(proxy));
+    }
+
+    /// @dev A live vanilla pending must never be silently abandoned by the lazy
+    ///      genesis: the first classed schedule reverts until the issuer lands
+    ///      or cancels it.
+    function test_UpgradeFromVanilla_LivePending_FirstClassedScheduleReverts() public {
+        (, ERC8056Composite upgraded, uint256 pendEff) = _upgradeVanillaProxyWithPending();
+
+        assertEq(upgraded.scalingHistoryLength(MultiplierClass.Supply), 0); // unbootstrapped
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(ERC8056Composite.VanillaPendingUpdate.selector, pendEff));
+        upgraded.setUIMultiplier(MultiplierClass.Supply, DOUBLE, block.timestamp + 10, "", "", "");
+
+        // class-scoped setter is equally guarded
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(ERC8056Composite.VanillaPendingUpdate.selector, pendEff));
+        upgraded.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 10, "", "", "");
+    }
+
+    /// @dev Resolution path 1: letting the vanilla update land naturally unblocks
+    ///      the first classed schedule.
+    function test_UpgradeFromVanilla_LandedPending_FirstClassedScheduleSucceeds() public {
+        (, ERC8056Composite upgraded, uint256 pendEff) = _upgradeVanillaProxyWithPending();
+
+        vm.warp(pendEff + 1); // vanilla announcement activates; pending no longer live
+        assertEq(upgraded.uiMultiplier(), 3 * NEUTRAL);
+
+        vm.prank(owner);
+        upgraded.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 10, "", "", "");
+        assertTrue(upgraded.hasPendingUIMultiplier(MultiplierClass.Yield));
+    }
+
+    /// @dev Resolution path 2: cancelling via the legacy entrypoint unblocks the
+    ///      first classed schedule. The cancel itself must NOT be guarded.
+    function test_UpgradeFromVanilla_CancelledPending_FirstClassedScheduleSucceeds() public {
+        (, ERC8056Composite upgraded,) = _upgradeVanillaProxyWithPending();
+
+        vm.prank(owner);
+        upgraded.cancelPendingUIMultiplier(); // legacy cancel resolves the conflict
+        assertEq(upgraded.uiMultiplier(), 2 * NEUTRAL);
+
+        vm.prank(owner);
+        upgraded.setUIMultiplier(MultiplierClass.Supply, DOUBLE, block.timestamp + 10, "", "", "");
+        assertTrue(upgraded.hasPendingUIMultiplier(MultiplierClass.Supply));
+    }
+
+    //==============================================================================//
+    // Seamless retrocompat: migration-window per-class coherence (R-cohere)        //
+    //==============================================================================//
+
+    /// @dev During the migration window the per-class factor views must compose
+    ///      to exactly `uiMultiplier()` — the Supply factor carries the inherited
+    ///      vanilla denomination instead of reading a misleading neutral.
+    function test_UpgradeFromVanilla_PreBootstrap_PerClassViewsCoherentWithComposite() public {
+        vm.warp(10 days); // give the window an interior for historical reads
+        ERC1967Proxy proxy = new ERC1967Proxy(address(new ERC8056("v", "V", owner)), "");
+        vm.store(address(proxy), bytes32(uint256(5)), bytes32(uint256(uint160(owner))));
+        vm.store(address(proxy), bytes32(uint256(6)), bytes32(uint256(3 * NEUTRAL)));
+        vm.store(address(proxy), bytes32(uint256(7)), bytes32(uint256(3 * NEUTRAL)));
+        address compositeImpl = address(new ERC8056Composite("v", "V", owner));
+        vm.store(address(proxy), IMPL_SLOT, bytes32(uint256(uint160(compositeImpl))));
+        ERC8056Composite upgraded = ERC8056Composite(address(proxy));
+
+        assertEq(upgraded.uiMultiplier(), 3 * NEUTRAL);
+
+        // Supply factor reports the inherited denomination; others stay neutral.
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Supply), 3 * NEUTRAL);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Yield), NEUTRAL);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Other), NEUTRAL);
+
+        // Product of factors == composite, at the live timestamp...
+        uint256 product = UIScalingMath.composeUiMultiplier(
+            upgraded.uiScalingFactorAt(MultiplierClass.Supply, block.timestamp),
+            upgraded.uiScalingFactorAt(MultiplierClass.Yield, block.timestamp),
+            upgraded.uiScalingFactorAt(MultiplierClass.Other, block.timestamp)
+        );
+        assertEq(product, upgraded.uiMultiplier());
+
+        // ...and at an arbitrary historical timestamp via the paired views.
+        uint256 past = block.timestamp - 1 days;
+        assertEq(
+            UIScalingMath.composeUiMultiplier(
+                upgraded.uiMultiplierAt(MultiplierClass.Supply, past),
+                upgraded.uiMultiplierAt(MultiplierClass.Yield, past),
+                upgraded.uiMultiplierAt(MultiplierClass.Other, past)
+            ),
+            upgraded.uiMultiplierAt(past)
+        );
+
+        // Post-bootstrap everything switches over in lockstep.
+        uint256 tSupply = block.timestamp + 10;
+        vm.prank(owner);
+        upgraded.setUIMultiplier(MultiplierClass.Supply, DOUBLE, tSupply, "", "", "");
+        vm.warp(tSupply + 1);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Supply), DOUBLE);
+        assertEq(
+            UIScalingMath.composeUiMultiplier(
+                upgraded.uiScalingFactor(MultiplierClass.Supply),
+                upgraded.uiScalingFactor(MultiplierClass.Yield),
+                upgraded.uiScalingFactor(MultiplierClass.Other)
+            ),
+            upgraded.uiMultiplier()
+        );
     }
 }

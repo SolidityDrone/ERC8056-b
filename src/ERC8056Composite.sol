@@ -41,6 +41,12 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     error CompositeOverflow();
     error NoticePeriodTooShort();
     error NoticePeriodTooLong();
+    /// @dev Retrocompat guard (S3): the first classed schedule refuses to run
+    ///      while the inherited vanilla slots still hold an unlanded pending
+    ///      update, so no announcement is ever silently dropped at bootstrap.
+    ///      Resolution: let the vanilla update land, or call the legacy
+    ///      {cancelPendingUIMultiplier}.
+    error VanillaPendingUpdate(uint256 vanillaEffectiveAt);
 
     uint256 private constant MAX_NOTICE_PERIOD = 3650 days;
 
@@ -81,6 +87,14 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
 
     function uiScalingFactorAt(MultiplierClass scalingClass, uint256 timestamp) public view override returns (uint256) {
         _validateScalingClass(scalingClass);
+        // Migration window: per-class factor views compose coherently with the
+        // composite reads (S4). The Supply class carries the inherited vanilla
+        // denomination; other classes stay neutral until genesis is seeded.
+        if (!_isBootstrapped()) {
+            return scalingClass == MultiplierClass.Supply
+                ? _inheritedMultiplierAt(timestamp)
+                : UIScalingMath.MULTIPLIER_DECIMALS;
+        }
         uint256[] storage timestamps = _checkpointTimestamps[scalingClass];
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
         uint256 idx = Arrays.lowerBound(timestamps, timestamp);
@@ -183,7 +197,12 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         _setMultiplier(scalingClass, newMultiplier, effectiveAtTimestamp, id, description, uri);
     }
 
-    /// @notice Legacy 2-arg setter from ERC-8056: targets the Supply class.
+    /// @notice LEGACY COMPAT HAZARD: targets the Supply class ONLY.
+    ///     Vanilla-era tooling calling this expects `uiMultiplier()` to become
+    ///     exactly `newMultiplier` after landing. That holds while Yield/Other
+    ///     stay neutral (1e18), but once any Yield or Other announcement exists,
+    ///     the composite reads `Supply × Yield × Other` and will differ from the
+    ///     value passed here. Use the classed setter when classes are in play.
     /// @dev Delegates to the Supply class instead of writing the base contract's
     ///      dead single-multiplier storage (which vanilla reads would never see).
     function setUIMultiplier(uint256 newMultiplier, uint256 effectiveAtTimestamp) public override(ERC8056) onlyOwner {
@@ -194,6 +213,13 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     ///         ERC-8056 cancel behavior, generalized to the decomposed classes).
     ///         Reverts when nothing is pending across any class.
     function cancelPendingUIMultiplier() public override(IERC8056Cancel, ERC8056) onlyOwner {
+        // Migration window: a live vanilla pending is cancelled with exact
+        // vanilla slot semantics (reverting NothingToCancel when idle), so
+        // legacy resolution flows work unchanged pre-bootstrap (S3 path 2).
+        if (!_isBootstrapped()) {
+            ERC8056._cancelVanillaPending();
+            return;
+        }
         bool any;
         for (uint256 i = 0; i < UIScalingMath.SCALING_CLASS_COUNT; i++) {
             MultiplierClass c = MultiplierClass(i);
@@ -243,6 +269,13 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         require(newMultiplier > 0, "ERC8056: factor must be positive");
         require(effectiveAtTimestamp > block.timestamp, "ERC8056: effective time must be future");
         if (effectiveAtTimestamp < block.timestamp + _minNoticePeriod) revert NoticePeriodTooShort();
+
+        // Retrocompat guard (S3): never abandon a live vanilla pending update by
+        // bootstrapping over it. Cancels stay unguarded — the legacy cancel is
+        // one of the documented resolution paths.
+        if (!_isBootstrapped() && _vanillaPendingIsLive()) {
+            revert VanillaPendingUpdate(ERC8056._vanillaEffectiveAt());
+        }
 
         ClassScalingState storage state = _classScaling[scalingClass];
         ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
@@ -365,6 +398,22 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         return _checkpoints[MultiplierClass.Supply].length > 0;
     }
 
+    /// @dev True when the inherited vanilla base slots hold an unlanded pending
+    ///      announcement (see {VanillaPendingUpdate}).
+    function _vanillaPendingIsLive() private view returns (bool) {
+        uint256 eff = ERC8056._vanillaEffectiveAt();
+        return eff != 0 && block.timestamp < eff;
+    }
+
+    /// @dev True when any class has a live pending announcement. Used to restore
+    ///      the vanilla `effectiveAt() == 0 ⇔ nothing pending` sentinel idiom.
+    function _hasAnyPending() private view returns (bool) {
+        for (uint256 i = 0; i < UIScalingMath.SCALING_CLASS_COUNT; i++) {
+            if (hasPendingUIMultiplier(MultiplierClass(i))) return true;
+        }
+        return false;
+    }
+
     /// @dev Vanilla multiplier read from the inherited base slots with the same
     ///      0→neutral coercion {_lazyBootstrapAll} applies, so a proxy that was
     ///      never initialized under the vanilla implementation reads neutral.
@@ -423,11 +472,6 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         return n == 0 ? UIScalingMath.MULTIPLIER_DECIMALS : classEventAtNonce(scalingClass, n).cumulativeMultiplier;
     }
 
-    /// @dev Deviation from vanilla ERC-8056: returns the product over classes of
-    ///      the pending factor for classes with a live announcement and the active
-    ///      factor otherwise — i.e. it describes the composite multiplier that
-    ///      would result once every pending update lands, counting only live
-    ///      announcements.
     function newUIMultiplier() public view override(ERC8056) returns (uint256) {
         if (!_isBootstrapped()) {
             // Migration window: surface the vanilla token's own pending slot
@@ -436,30 +480,27 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
             uint256 inheritedPending = ERC8056.newUIMultiplier();
             return inheritedPending == 0 ? UIScalingMath.MULTIPLIER_DECIMALS : inheritedPending;
         }
-        return _compositeFromPending();
+        // Vanilla parity (S2): with nothing pending anywhere, vanilla clients
+        // pricing off this view must see the active composite — identical to
+        // {uiMultiplier()} so no phantom update is implied.
+        return _hasAnyPending() ? _compositeFromPending() : uiMultiplier();
     }
 
-    /// @dev Deviation from vanilla ERC-8056: returns the earliest pending
-    ///      `effectiveAt` across classes; if no class has a live announcement,
-    ///      returns the most recent effective event across classes (0 only when
-    ///      nothing was ever scheduled) instead of resetting to 0.
+    /// @dev Vanilla idiom restored (S2): `effectiveAt() != 0 ⇔ an update is
+    ///      incoming`. Returns the earliest pending effectiveAt across classes,
+    ///      or 0 when no class has a live announcement.
     function effectiveAt() public view override(ERC8056) returns (uint256) {
         if (!_isBootstrapped()) return ERC8056.effectiveAt();
+        if (!_hasAnyPending()) return 0;
         uint256 earliest = type(uint256).max;
-        uint256 latestEvent;
         for (uint256 i = 0; i < UIScalingMath.SCALING_CLASS_COUNT; i++) {
             MultiplierClass scalingClass = MultiplierClass(i);
             if (hasPendingUIMultiplier(scalingClass)) {
                 uint256 ts = _classScaling[scalingClass].effectiveAt;
                 if (ts < earliest) earliest = ts;
             }
-            ScalingCheckpoint[] storage history = _checkpoints[scalingClass];
-            if (history.length > 0) {
-                uint256 lastTs = history[history.length - 1].effectiveAt;
-                if (lastTs > latestEvent) latestEvent = lastTs;
-            }
         }
-        return earliest != type(uint256).max ? earliest : latestEvent;
+        return earliest;
     }
 
     //==============================================================================//

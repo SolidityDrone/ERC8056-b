@@ -73,9 +73,7 @@ contract AccessControlTest is Test {
     function test_composite_setUIMultiplier_classed_revertsForNonOwner() public {
         _expectOnlyOwner(attacker);
         vm.prank(attacker);
-        composite.setUIMultiplier(
-            MultiplierClass.Yield, 2 * MULTIPLIER_DECIMALS, block.timestamp + 1 days, "", "", ""
-        );
+        composite.setUIMultiplier(MultiplierClass.Yield, 2 * MULTIPLIER_DECIMALS, block.timestamp + 1 days, "", "", "");
     }
 
     function test_composite_cancelPendingUIMultiplier_noArg_revertsForNonOwner() public {
