@@ -811,23 +811,25 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         _advanceNonce(1 days); // nonce 1, Y = 1x
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 2); // pair (1,3), immature
 
-        // Pre-maturity: both legs redeem 1:1 via unwrap, so backing is cap+yield supply.
+        // Pre-maturity: solo redemptions are gated, so each pair is held in equal
+        // capital/yield amounts and only the combined `unwrap` is exercisable at 1:1.
+        // Realizable backing is therefore min(capitalSupply, yieldSupply), not their sum.
         assertEq(wrapper.currentNonce(), 1, "window still immature");
         assertEq(
             wrapper.windowBackingOf(start, target),
-            wrapper.capitalSupplyOf(start, target) + wrapper.yieldSupplyOf(start, target),
-            "immature -> 1:1 backing"
+            wrapper.capitalSupplyOf(start, target),
+            "immature -> min(capital, yield) backing (equal supplies)"
         );
-        assertEq(wrapper.windowBackingOf(start, target), 2 * RAW_STAKE);
+        assertEq(wrapper.windowBackingOf(start, target), RAW_STAKE);
 
         vm.prank(alice);
         wrapper.unwrap(RAW_STAKE / 2, start, target);
         assertEq(
             wrapper.windowBackingOf(start, target),
-            wrapper.capitalSupplyOf(start, target) + wrapper.yieldSupplyOf(start, target),
+            wrapper.capitalSupplyOf(start, target),
             "immature -> 1:1 backing after partial unwrap"
         );
-        assertEq(wrapper.windowBackingOf(start, target), RAW_STAKE); // (50 + 50) * 1:1
+        assertEq(wrapper.windowBackingOf(start, target), RAW_STAKE / 2); // 50 each, min = 50
 
         // Matures: frozen formula applies.
         _applyYieldDelta(DOUBLE, 1 days); // nonce 2, Y = 2x

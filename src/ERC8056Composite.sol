@@ -173,14 +173,31 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         _setMultiplier(MultiplierClass.Supply, newMultiplier, effectiveAtTimestamp, "", "", "");
     }
 
+    /// @notice Cancels every class with a live pending announcement (vanilla
+    ///         ERC-8056 cancel behavior, generalized to the decomposed classes).
+    ///         Reverts when nothing is pending across any class.
     function cancelPendingUIMultiplier() public override(IERC8056Cancel, ERC8056) onlyOwner {
-        revert("ERC8056: use class-based cancel");
+        bool any;
+        for (uint256 i = 0; i < UIScalingMath.SCALING_CLASS_COUNT; i++) {
+            MultiplierClass c = MultiplierClass(i);
+            if (hasPendingUIMultiplier(c)) {
+                _cancelClass(c);
+                any = true;
+            }
+        }
+        if (!any) revert NothingToCancel();
     }
 
     function cancelPendingUIMultiplier(MultiplierClass scalingClass) public override(IERC8056Composite) onlyOwner {
         _validateScalingClass(scalingClass);
         if (!hasPendingUIMultiplier(scalingClass)) revert NothingToCancel();
+        _cancelClass(scalingClass);
+    }
 
+    /// @dev Cancels the pending announcement for a single class, restoring its
+    ///      active factor and removing the scheduled checkpoint. Shared by both
+    ///      cancel entrypoints.
+    function _cancelClass(MultiplierClass scalingClass) private {
         ClassScalingState storage state = _classScaling[scalingClass];
         uint256 pendingFactor = state.pendingFactor;
 
@@ -215,36 +232,36 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         uint256 oldComposite = uiMultiplier();
         uint256 oldMultiplier = uiScalingFactor(scalingClass);
 
-        // Schedule-time guard: reject announcements whose pending composite
-        // would overflow once this class's factor lands. Division-based
-        // detection avoids arithmetic panics inside a state-changing call.
-        // Factors are guaranteed > 0 (genesis is 1e18 and schedules require
-        // positivity), so `withoutClass` cannot revert.
+        // Schedule-time guard: reject announcements whose pending composite would
+        // overflow once this class's factor lands. `pending` is the current
+        // pending composite (overflow-safe via sequential mulDiv). `otherComposite`
+        // is the composite of every OTHER class's pending factor; multiplying it
+        // by the new factor must stay below 2^256. Both intermediate products use
+        // saturating arithmetic so the guard itself can never panic.
         uint256 pending = _compositeFromPending();
-        uint256 withoutClass = Math.mulDiv(pending, UIScalingMath.MULTIPLIER_DECIMALS, _pendingFactor(scalingClass));
-        if (withoutClass > type(uint256).max / newMultiplier) revert CompositeOverflow();
+        uint256 otherComposite = _safeMulDiv(pending, UIScalingMath.MULTIPLIER_DECIMALS, _pendingFactor(scalingClass));
+        if (newMultiplier > type(uint256).max / otherComposite) revert CompositeOverflow();
 
         if (hasPendingUIMultiplier(scalingClass)) {
             history.pop();
             _checkpointTimestamps[scalingClass].pop();
-        } else if (block.timestamp >= state.effectiveAt) {
-            state.activeFactor = _pendingFactor(scalingClass);
         }
 
         if (history.length == 0) {
-            // lazy genesis: upgraded vanilla proxies have no checkpoint history;
-            // synthesize the genesis entry so indexing matches direct deploys
-            history.push(ScalingCheckpoint(0, UIScalingMath.MULTIPLIER_DECIMALS, 0));
-            _checkpointTimestamps[scalingClass].push(0);
+            // Lazy genesis for a freshly-upgraded vanilla proxy (or the very first
+            // schedule). Seed every class's genesis checkpoint. The Supply class
+            // inherits the live vanilla multiplier from the base contract so the
+            // pre-upgrade UI denomination is preserved; other classes start neutral.
+            _lazyBootstrapAll(ERC8056.uiMultiplier());
         }
 
         state.pendingFactor = newMultiplier;
         state.effectiveAt = effectiveAtTimestamp;
 
-        // `oldMultiplier` derives from checkpoint history and is always > 0:
-        // genesis pushes 1e18 and every schedule requires newMultiplier > 0,
-        // so no zero-branch is needed here.
-        uint256 ratio = newMultiplier * UIScalingMath.MULTIPLIER_DECIMALS / oldMultiplier;
+        // `oldMultiplier` derives from checkpoint history and is always > 0
+        // (genesis pushes 1e18 and every schedule requires newMultiplier > 0),
+        // so mulDiv's internal 512-bit multiplication cannot overflow here.
+        uint256 ratio = Math.mulDiv(newMultiplier, UIScalingMath.MULTIPLIER_DECIMALS, oldMultiplier);
         history.push(ScalingCheckpoint(effectiveAtTimestamp, newMultiplier, ratio));
         _checkpointTimestamps[scalingClass].push(effectiveAtTimestamp);
         uint256 nonce = getClassNonce(scalingClass);
@@ -287,6 +304,33 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
     function _mulDivOrMax(uint256 a, uint256 b) private pure returns (uint256) {
         if (a > type(uint256).max / b) return type(uint256).max;
         return a * b;
+    }
+
+    /// @dev Saturating `(a * b) / c` used by the schedule-time overflow guard so
+    ///      the guard itself can never panic: if `a * b` exceeds 2^256 the result
+    ///      saturates to type(uint256).max rather than reverting.
+    function _safeMulDiv(uint256 a, uint256 b, uint256 c) private pure returns (uint256) {
+        if (a > type(uint256).max / b) return type(uint256).max;
+        return Math.mulDiv(a * b, 1, c);
+    }
+
+    /// @dev Seeds genesis checkpoints for every class whose history is empty.
+    ///      The Supply class inherits the live vanilla multiplier (read from the
+    ///      base contract) so an upgraded vanilla token keeps its UI denomination;
+    ///      other classes start neutral (1e18). Idempotent per-class.
+    function _lazyBootstrapAll(uint256 inherited) private {
+        // A 0 base multiplier is invalid (schedules require positivity) and only
+        // occurs for an uninitialized proxy slot; treat it as neutral so a
+        // half-initialized upgrade never seeds a 0 Supply factor.
+        uint256 supplyGenesis = inherited == 0 ? UIScalingMath.MULTIPLIER_DECIMALS : inherited;
+        for (uint256 i = 0; i < UIScalingMath.SCALING_CLASS_COUNT; i++) {
+            MultiplierClass c = MultiplierClass(i);
+            if (_checkpoints[c].length == 0) {
+                uint256 genesis = (c == MultiplierClass.Supply) ? supplyGenesis : UIScalingMath.MULTIPLIER_DECIMALS;
+                _checkpoints[c].push(ScalingCheckpoint(0, genesis, 0));
+                _checkpointTimestamps[c].push(0);
+            }
+        }
     }
 
     /// @dev Saturating composite for {uiMultiplierAtNonce}: product of the class

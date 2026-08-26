@@ -757,9 +757,24 @@ contract ERC8056CompositeTest is ScalingTestBase {
         assertEq(token.effectiveAt(MultiplierClass.Yield), block.timestamp + 2 days);
     }
 
-    function test_revertWhenCancelViaBaseSelector() public {
+    function test_cancelViaBaseSelector_CancelsAllPendingClasses() public {
         vm.prank(owner);
-        vm.expectRevert("ERC8056: use class-based cancel");
+        token.setUIMultiplier(MultiplierClass.Supply, DOUBLE, block.timestamp + 1 days, "", "", "");
+        vm.prank(owner);
+        token.setUIMultiplier(MultiplierClass.Yield, DOUBLE, block.timestamp + 1 days, "", "", "");
+        assertTrue(token.hasPendingUIMultiplier(MultiplierClass.Supply));
+        assertTrue(token.hasPendingUIMultiplier(MultiplierClass.Yield));
+
+        vm.prank(owner);
+        token.cancelPendingUIMultiplier(); // no-arg cancels every pending class
+
+        assertFalse(token.hasPendingUIMultiplier(MultiplierClass.Supply));
+        assertFalse(token.hasPendingUIMultiplier(MultiplierClass.Yield));
+    }
+
+    function test_cancelViaBaseSelector_RevertsWhenNothingPending() public {
+        vm.prank(owner);
+        vm.expectRevert(ERC8056.NothingToCancel.selector);
         token.cancelPendingUIMultiplier();
     }
 
@@ -915,6 +930,33 @@ contract ERC8056CompositeTest is ScalingTestBase {
         // non-zero nonces still revert on empty history
         vm.expectRevert(ERC8056Composite.EventNotRecorded.selector);
         upgraded.classEventAtNonce(MultiplierClass.Yield, 1);
+    }
+
+    /// @dev C-M3: a non-neutral vanilla multiplier must survive the upgrade as the
+    ///      Supply-class genesis factor, so the pre-upgrade UI denomination is kept.
+    function test_UpgradeFromVanilla_NonNeutralMultiplier_CarriedToSupply() public {
+        ERC1967Proxy proxy = new ERC1967Proxy(address(new ERC8056("v", "V", owner)), "");
+        // Faithfully initialize the proxy's vanilla state (constructor ran via proxy
+        // in production): owner (slot 5) + live multiplier 3e18 (slot 6) + neutral
+        // pending (slot 7). Slots per `forge inspect ERC8056 storage-layout`.
+        vm.store(address(proxy), bytes32(uint256(5)), bytes32(uint256(uint160(owner))));
+        vm.store(address(proxy), bytes32(uint256(6)), bytes32(uint256(3 * NEUTRAL)));
+        vm.store(address(proxy), bytes32(uint256(7)), bytes32(uint256(3 * NEUTRAL)));
+
+        address compositeImpl = address(new ERC8056Composite("v", "V", owner));
+        vm.store(address(proxy), IMPL_SLOT, bytes32(uint256(uint160(compositeImpl))));
+        ERC8056Composite upgraded = ERC8056Composite(address(proxy));
+
+        uint256 effectiveAt = block.timestamp + 10;
+        vm.prank(owner);
+        upgraded.setUIMultiplier(MultiplierClass.Yield, DOUBLE, effectiveAt, "", "", "");
+        vm.warp(effectiveAt + 1);
+
+        // Supply inherited the 3x vanilla multiplier; Yield = 2x; Other neutral.
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Supply), 3 * NEUTRAL);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Yield), DOUBLE);
+        assertEq(upgraded.uiScalingFactor(MultiplierClass.Other), NEUTRAL);
+        assertEq(upgraded.uiMultiplier(), 6 * NEUTRAL);
     }
 
     /// @dev Regression: the composite-at-nonce composition can mix extreme factors

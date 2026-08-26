@@ -296,15 +296,14 @@ genesis checkpoint on the fly.
      `{timestamp: 0, cumulativeMultiplier: 1e18, multiplierRatio: 0}` while the
      history is empty (matching direct deploys), so degenerate wrapper windows
      `(0, 0)` stay readable. Nonces > 0 revert until the first schedule lands.
-   - **Factor reads return `1e18` only if the vanilla token's pre-upgrade
-     multiplier was neutral.** The vanilla `_uiMultiplier` storage slot is
-     preserved but *unused*: a non-neutral vanilla multiplier is NOT carried
-     into class state — upgrading resets the display denomination to 1x.
-     Issuers MUST re-schedule the equivalent Supply-class factor immediately
-     post-upgrade (`setUIMultiplier(MultiplierClass.Supply, oldMultiplier, ...)`,
-     behind a timelock if possible) and BEFORE users transact; otherwise
-     `balanceOfUI`, `toUIAmount`, and every UI conversion silently shift by the
-     dropped factor.
+    - **The vanilla display denomination is preserved on upgrade.** On the first
+      schedule after an upgrade, the composite seeds the **Supply** class's genesis
+      checkpoint with the live vanilla `_uiMultiplier` read from the base contract,
+      so the pre-upgrade UI denomination carries over automatically — no manual
+      re-scheduling is required for the *active* multiplier. Only a *pending*
+      vanilla update is dropped at the upgrade boundary (the base pending slots are
+      intentionally unused); issuers who had a pending non-neutral update scheduled
+      should re-issue it as a Supply-class announcement post-upgrade.
 4. After the first schedule per class, indexing matches direct deploys
    exactly.
 

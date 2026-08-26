@@ -257,8 +257,11 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
     }
 
     /// @dev Remaining raw backing of window (start, target):
-    ///      - Pre-maturity (current yield nonce < targetNonce): both legs redeem 1:1
-    ///        via {unwrap}, so backing = capitalSupply + yieldSupply.
+    ///      - Pre-maturity (current yield nonce < targetNonce): solo redemptions are
+    ///        gated, so every outstanding pair is held in equal capital/yield
+    ///        amounts and only the combined `unwrap` is exercisable at 1:1. The
+    ///        realizable backing is therefore min(capitalSupply, yieldSupply) — not
+    ///        their sum (which would double-count each pair).
     ///      - Matured (current yield nonce >= targetNonce): capitalSupply * capitalShare
     ///        + yieldSupply * coupon (frozen pricing).
     ///      0 for a nonexistent pair.
@@ -266,7 +269,9 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard {
         IERC8056PairWrapper.Pair storage pair = _pairs[startNonce][targetNonce];
         if (address(pair.capital) == address(0)) return 0;
         if (scaledUnderlying.getClassNonce(MultiplierClass.Yield) < targetNonce) {
-            return capitalSupplyOf(startNonce, targetNonce) + yieldSupplyOf(startNonce, targetNonce);
+            uint256 cap = capitalSupplyOf(startNonce, targetNonce);
+            uint256 yld = yieldSupplyOf(startNonce, targetNonce);
+            return cap < yld ? cap : yld;
         }
         uint256 coupon = _couponOf(startNonce, targetNonce);
         uint256 share = UIScalingMath.MULTIPLIER_DECIMALS - coupon;

@@ -26,6 +26,12 @@ library UIScalingMath {
         result = Math.mulDiv(result, supplyFactor, MULTIPLIER_DECIMALS);
         result = Math.mulDiv(result, yieldFactor, MULTIPLIER_DECIMALS);
         result = Math.mulDiv(result, otherFactor, MULTIPLIER_DECIMALS);
+        // Floor-rounding of each 1e18 step can push a product of strictly
+        // positive factors below resolution (two sub-1e18 class factors yield
+        // < 1e36). Vanilla ERC-8056 can never produce a zero multiplier, so
+        // clamp the degenerate-but-nonzero product to the smallest representable
+        // value instead of 0 — avoids a ZeroFactor revert in fromUIAmount.
+        if (result == 0) result = 1;
         return result;
     }
 
