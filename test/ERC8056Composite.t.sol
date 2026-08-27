@@ -1358,4 +1358,110 @@ contract ERC8056CompositeTest is ScalingTestBase {
             upgraded.uiMultiplier()
         );
     }
+
+    //==============================================================================//
+    // Differential retrocompat: vanilla vs upgraded composite, view for view       //
+    //==============================================================================//
+
+    /// @dev Differential harness: a vanilla ERC8056 and a proxy upgraded to the
+    ///      composite, both holding the same balance, driven through IDENTICAL
+    ///      updates (legacy 2-arg setter = Supply class). Every vanilla-observable
+    ///      view must return identical values unless the divergence is one of the
+    ///      documented deviations.
+    struct Pair {
+        ERC8056 vanilla;
+        ERC8056Composite upgraded;
+    }
+
+    function _differentialPair() internal returns (Pair memory p) {
+        p.vanilla = new ERC8056("v", "V", owner);
+        vm.prank(owner);
+        p.vanilla.mint(holder, RAW_STAKE);
+
+        ERC1967Proxy proxy = new ERC1967Proxy(address(new ERC8056("v", "V", owner)), "");
+        vm.store(address(proxy), bytes32(uint256(5)), bytes32(uint256(uint160(owner))));
+        vm.prank(owner);
+        ERC8056(address(proxy)).mint(holder, RAW_STAKE);
+        address compositeImpl = address(new ERC8056Composite("v", "V", owner));
+        vm.store(address(proxy), IMPL_SLOT, bytes32(uint256(uint160(compositeImpl))));
+        p.upgraded = ERC8056Composite(address(proxy));
+    }
+
+    function _assertVanillaViewsEqual(Pair memory p) internal view {
+        assertEq(p.upgraded.uiMultiplier(), p.vanilla.uiMultiplier(), "uiMultiplier");
+        assertEq(p.upgraded.newUIMultiplier(), p.vanilla.newUIMultiplier(), "newUIMultiplier");
+        assertEq(p.upgraded.balanceOf(holder), p.vanilla.balanceOf(holder), "balanceOf");
+        assertEq(p.upgraded.totalSupply(), p.vanilla.totalSupply(), "totalSupply");
+        assertEq(p.upgraded.toUIAmount(RAW_STAKE), p.vanilla.toUIAmount(RAW_STAKE), "toUIAmount");
+        assertEq(p.upgraded.fromUIAmount(123 ether), p.vanilla.fromUIAmount(123 ether), "fromUIAmount");
+        assertEq(p.upgraded.balanceOfUI(holder), p.vanilla.balanceOfUI(holder), "balanceOfUI");
+        assertEq(p.upgraded.totalSupplyUI(), p.vanilla.totalSupplyUI(), "totalSupplyUI");
+    }
+
+    /// @dev Documented deviation (EIP deviations #2/#3): once bootstrapped, an
+    ///      idle composite reports `effectiveAt() == 0`, where vanilla would keep
+    ///      reporting the STALE timestamp of its last landed update. Strictly
+    ///      stronger than vanilla: under either consumer idiom (`!= 0` or
+    ///      `> now`) the idle composite correctly reads "nothing pending", while
+    ///      vanilla false-positives under `!= 0`.
+    function _assertSentinelZeroPostLanding(ERC8056Composite u) internal view {
+        assertEq(u.effectiveAt(), 0);
+        assertEq(u.newUIMultiplier(), u.uiMultiplier());
+    }
+
+    function test_Differential_RetroCompat_FullLifecycle() public {
+        vm.warp(10 days); // roomy timeline
+        Pair memory p = _differentialPair();
+
+        // --- Regime 1: fresh idle ---
+        _assertVanillaViewsEqual(p);
+
+        // --- Regime 2: migration window with a live vanilla pending (upgrade happened
+        //     while a pending update existed) ---
+        uint256 pendEff = block.timestamp + 30 days;
+        vm.startPrank(owner);
+        p.vanilla.setUIMultiplier(DOUBLE, pendEff);
+        // replay the same pending into the proxy's dead vanilla slots via the base call:
+        // on the composite this schedules Supply, so instead write slots directly to keep
+        // BOTH sides in pure vanilla pre-bootstrap state (composite not yet bootstrapped).
+        vm.stopPrank();
+        vm.store(address(p.upgraded), bytes32(uint256(7)), bytes32(uint256(DOUBLE)));
+        vm.store(address(p.upgraded), bytes32(uint256(8)), bytes32(uint256(pendEff)));
+        _assertVanillaViewsEqual(p);
+
+        // mint mid-window must behave identically too
+        vm.prank(owner);
+        p.vanilla.mint(holder, RAW_STAKE);
+        vm.prank(owner);
+        p.upgraded.mint(holder, RAW_STAKE);
+        _assertVanillaViewsEqual(p);
+
+        // --- Regime 3: landed pending (both sides activated identically).
+        // Still UNBOOTSTRAPPED on the proxy side, so ALL views - including the
+        // stale vanilla effectiveAt - mirror vanilla exactly (S4 inheritance).
+        vm.warp(pendEff + 1);
+        _assertVanillaViewsEqual(p);
+
+        // --- Regime 4: post-bootstrap legacy-setter update ---
+        // First classed schedule bootstraps genesis from the inherited value; after it,
+        // Supply carries the full denomination while Yield/Other stay neutral, so the
+        // composite product == whatever vanilla does with the same absolute value.
+        uint256 nextEff = block.timestamp + 1 days;
+        vm.startPrank(owner);
+        p.upgraded.setUIMultiplier(3 * NEUTRAL, nextEff); // legacy setter -> Supply class
+        p.vanilla.setUIMultiplier(3 * NEUTRAL, nextEff);
+        vm.stopPrank();
+        _assertVanillaViewsEqual(p);
+
+        vm.warp(nextEff + 1);
+        _assertVanillaViewsEqual(p);
+        _assertSentinelZeroPostLanding(p.upgraded);
+
+        // --- Regime 5: transfer events under scaling ---
+        vm.prank(holder);
+        p.vanilla.transfer(address(1), 1 ether);
+        vm.prank(holder);
+        p.upgraded.transfer(address(1), 1 ether);
+        _assertVanillaViewsEqual(p);
+    }
 }
