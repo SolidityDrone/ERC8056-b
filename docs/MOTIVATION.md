@@ -4,6 +4,23 @@ Why an ERC-8056 improvement? Because ERC-8056 as written cannot support
 principal/yield decomposition, and RWA protocols (lending, options, auctions)
 urgently need it.
 
+## The two benefits of this repo
+
+**1. Split the token into Capital and Yield LegTokens to use them in DeFi.**
+Because the multiplier's yield vs. supply attribution becomes knowable
+on-chain, a token can be split into a fungible Capital LegToken (principal)
+and Yield LegToken (accrued yield) with deterministic, event-accurate expiry —
+the primitive lending, options, and auction protocols need.
+
+**2. Build protocols on the real-world value of the asset — not the STOCK TOKEN
+price.** Because the yield portion of a multiplier change becomes elidable,
+a protocol reading the same Chainlink price feed can value the token as the
+real-world asset (nominal USD value of the underlying stock) rather than as a
+total-return stock token whose price drifts away from the asset as multipliers
+accrue.
+
+Everything below serves these two outcomes.
+
 ## The core limitation of ERC-8056
 
 ERC-8056 exposes a single composite `uiMultiplier`. When the off-chain issuer
@@ -71,7 +88,7 @@ Once classes exist:
 - The checkpoint history turns yield events into a **sequence of nonces**, each
   with a frozen multiplier — the raw material for a Capital/Yield split.
 
-## What this unlocks (protocols)
+## Benefit 1 in detail — what the split unlocks (protocols)
 
 With a capital/yield split that is precise and event-accurate, protocols can
 build on RWA without trusting a single scalar:
@@ -82,7 +99,7 @@ build on RWA without trusting a single scalar:
 - **Any** application that needs to separate "I own the asset" from "I own its
   growth" on a token that only publishes UI scaling.
 
-## Vanilla permits only derivative valuation — the extension enables RWA valuation too
+## Benefit 2 in detail — vanilla permits only derivative valuation
 
 This matters beyond the wrapper, and it shows concretely in how price oracles
 already consume these tokens. Chainlink's
