@@ -234,6 +234,23 @@ contract deployed twice — that protocols can plug into existing rails.
 - The yield leg is a clean "income asset" that can be transferred, priced, or
   sold separately.
 
+#### 3.1.1 Oracle integration: deriving real-world prices
+
+Chainlink already runs production [Tokenized Equity feeds](https://docs.chain.link/data-feeds/tokenized-equity-feeds)
+(see the [Robinhood provider page](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
+and [Robinhood Chain's oracle docs](https://docs.robinhood.com/chain/oracles-and-price-feeds/))
+that publish `equity market price × uiMultiplier()` as the token's Total
+Return Value. Because the feed embeds the full multiplier:
+
+- **Token USD value**: use `latestRoundData()` directly — no multiplier math needed.
+- **Real-world per-share price**: divide the feed price by the on-chain multiplier,
+  `sharePrice ≈ feedPrice × 1e18 / uiMultiplier()`.
+- **With the composite's class decomposition**, this becomes finer-grained: the
+  Yield factor alone (`uiScalingFactor(MultiplierClass.Yield)`) is the dividend
+  reinvestment component, so a protocol can derive a split-adjusted-only price
+  (`feed ÷ Yield factor`) or price capital/yield legs separately without
+  waiting for an issuer to publish per-class oracle data.
+
 ### 3.2 Options
 
 - **Write the yield upside.** An option can be collateralized with the Yield

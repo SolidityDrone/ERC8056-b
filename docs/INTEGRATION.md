@@ -139,6 +139,16 @@ All pricing is **frozen-delta**: computed from historical checkpoints at the
 target nonce, never from the live multiplier. This means redemption payoffs are
 deterministic and independent of later events.
 
+For USD valuation of the underlying tokenized stock, Chainlink's
+[Tokenized Equity feeds](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
+(SVR) already embed the issuer's `uiMultiplier()` in every published price, so:
+
+- token USD value = feed price directly;
+- real-world per-share price = feed price × 1e18 / `uiMultiplier()`;
+- per-leg USD value = feed price combined with the relevant class factor
+  (e.g. a capital leg valued against the split-only component excludes the
+  Yield factor).
+
 | Member | Meaning |
 |--------|---------|
 | `currentNonce()` | current yield nonce (`== scaledUnderlying.getClassNonce(MultiplierClass.Yield)`) |

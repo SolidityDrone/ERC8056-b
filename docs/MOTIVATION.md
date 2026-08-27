@@ -46,6 +46,16 @@ On Robinhood-chain stock tokens this is **currently not doable**: the token is a
 black box that only reports a scalar multiplier, with no class attribution and
 no history to price a window against.
 
+This is not hypothetical infrastructure: the vanilla scalar-multiplier model is
+already live in production. Chainlink's [Robinhood Tokenized Equity feeds](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
+publish a Total Return Value of `equity market price × uiMultiplier()`, reading
+the multiplier (including `newUIMultiplier()` / `effectiveAt()` pending state)
+directly from the token contract, and honoring the issuer's `oraclePaused()`
+coordination flag through corporate actions. The oracle proves both the
+issuer-driven multiplier workflow and one-way consumption of it — but the
+single scalar gives oracle consumers no way to attribute changes to yield vs.
+supply, which is precisely what this extension unlocks.
+
 ## The improvement in one sentence
 
 Decompose the multiplier into **named scaling classes** (`Supply`, `Yield`,

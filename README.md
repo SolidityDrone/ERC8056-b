@@ -23,6 +23,12 @@ solving the case where real-world yield accrues in discrete events (dividends)
 rather than continuously. See [MOTIVATION](docs/MOTIVATION.md) and
 [TECHNICAL](docs/TECHNICAL.md).
 
+> **Production context:** this vanilla model is live today — Chainlink's
+> [Robinhood Tokenized Equity feeds](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
+> read `uiMultiplier()` from the token contract to publish
+> `equity price × multiplier` (Total Return Value) prices. The extension
+> adds the class attribution those feeds' consumers cannot get from a scalar.
+
 ## Quickstart
 
 ### Requirements
