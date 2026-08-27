@@ -29,6 +29,26 @@ rather than continuously. See [MOTIVATION](docs/MOTIVATION.md) and
 > `equity price × multiplier` (Total Return Value) prices. The extension
 > adds the class attribution those feeds' consumers cannot get from a scalar.
 
+## Vanilla permits only derivative valuation — the extension enables RWA valuation too
+
+The point is that today the standard only allows integration of these tokens in
+a **derivative** way. You don't value the token as an RWA, but as a *stock
+token* — and these are different: the token's USD price diverges from the
+real-world asset due to the multiplier, and the Chainlink feed hands protocols
+exactly that altered price, with the full multiplier baked in.
+
+By upgrading to this proposal, using the Chainlink tokenized stock/equity feed,
+a protocol can treat the stock token **both ways** by eliding the yield portion
+of the price once the feed price is read:
+
+- **Derivative mode** — feed price as-is (total-return instrument).
+- **RWA mode** — real-world nominal USD value of the stock, recovered by
+  stripping the Yield class factor (`feed ÷ uiScalingFactor(Yield)`), so the
+  token is valued as the real-world asset rather than its altered price.
+
+Full formulas, the corporate-action pause workflow, and an oracle-consumer
+checklist: [CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md](docs/CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md).
+
 ## Quickstart
 
 ### Requirements
@@ -96,6 +116,7 @@ of 100 handler calls (~70 s) and is configured in `foundry.toml`.
 │   ├── MOTIVATION.md                  # why this proposal exists
 │   ├── TECHNICAL.md                   # extension spec, expiry, use cases
 │   ├── INTEGRATION.md                 # wrapper interface + registry guide
+│   └── CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md  # oracle/valuation duality
 ```
 
 ## Scaling classes

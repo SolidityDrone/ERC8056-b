@@ -82,6 +82,33 @@ build on RWA without trusting a single scalar:
 - **Any** application that needs to separate "I own the asset" from "I own its
   growth" on a token that only publishes UI scaling.
 
+## Vanilla permits only derivative valuation — the extension enables RWA valuation too
+
+This matters beyond the wrapper, and it shows concretely in how price oracles
+already consume these tokens. Chainlink's
+[Tokenized Equity feeds](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
+read `uiMultiplier()` from the token contract and publish
+`equity market price × multiplier` as the token's price.
+
+The point is that today the standard only allows protocols to integrate these
+tokens in a **derivative** way: the protocol does not value the token as an
+RWA, but as a *stock token* — an instrument whose USD price diverges from the
+real-world asset as multipliers accrue, and that is the price every oracle
+hands out. Eliding the multiplier with a single scalar is all-or-nothing:
+splits and dividends vanish together, with no attribution.
+
+By upgrading to this proposal, the same Chainlink tokenized-equity feed can be
+read **both ways**: a protocol elides only the **Yield** portion of the price
+(`feed ÷ uiScalingFactor(Yield)`) once the feed price is read. The stock token
+can then be used both as a derivative instrument and as an RWA tied to the
+real-world nominal USD value of the stock — not its altered, multiplier-inflated
+price. Which portion of the published price is accreted yield and which is a
+pure re-denomination is finally knowable on-chain.
+
+The full integration treatment — formulas for both valuation modes, the
+corporate-action pause workflow, and an oracle-consumer checklist — lives in
+[CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md](CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md).
+
 The mechanics — how classes, checkpoint history, and nonce-based expiry produce
 a deterministic, solvent split — are in [TECHNICAL.md](TECHNICAL.md). For
 protocols building on the Capital/Yield split, the wrapper and registry surface

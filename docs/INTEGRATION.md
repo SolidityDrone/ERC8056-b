@@ -141,13 +141,11 @@ deterministic and independent of later events.
 
 For USD valuation of the underlying tokenized stock, Chainlink's
 [Tokenized Equity feeds](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
-(SVR) already embed the issuer's `uiMultiplier()` in every published price, so:
-
-- token USD value = feed price directly;
-- real-world per-share price = feed price × 1e18 / `uiMultiplier()`;
-- per-leg USD value = feed price combined with the relevant class factor
-  (e.g. a capital leg valued against the split-only component excludes the
-  Yield factor).
+(SVR) already embed the issuer's `uiMultiplier()` in every published price —
+protocols can read the feed derivatively (token USD as-is) or as a real-world
+asset by eliding the multiplier, and with the composite, by eliding only the
+Yield factor. Formulas per valuation mode:
+[CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md](CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md).
 
 | Member | Meaning |
 |--------|---------|
