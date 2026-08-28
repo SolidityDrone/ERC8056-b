@@ -48,6 +48,82 @@ escrow stays solvent by construction.
                              (both gated until getClassNonce(MultiplierClass.Yield) >= targetNonce)
 ```
 
+### 1.1 Worked example: splitting 100 raw stock tokens
+
+The legs are claims on **raw** tokens, and their redemption split is computed
+from the **Yield-class multipliers frozen at the window's two nonces** — the
+cumulative multiplier at `startNonce` and at `targetNonce`:
+
+```
+coupon = max(1 − Y_start / Y_target, 0)        capital share = 1 − coupon
+```
+
+Setup — the issuer distributes yield in discrete events, each ticking the
+Yield nonce and raising the cumulative multiplier:
+
+| Yield nonce | When (roughly) | Cumulative multiplier `Y_n` | Event |
+|---|---|---|---|
+| 0 | genesis | 1.00 | — (nothing distributed yet) |
+| 1 | March | 1.50 | dividend #1 lands |
+| 2 | June | 2.00 | dividend #2 lands |
+| 7 | next year | 2.50 | dividend #7 lands (irrelevant below — see step 4) |
+
+**Step 1 — split.** At nonce 0, Alice wraps **100 raw** stock tokens with
+`lockNonces = 2` → window `(0, 2)`. The token escrows her 100 raw and mints her
+**100 Capital-0-2** + **100 Yield-0-2**.
+
+**Step 2 — the window matures.** Two Yield events later, `currentNonce() = 2`,
+so `isMatured(0, 2) = true` and the coupon freezes from the two endpoint
+checkpoints:
+
+```
+coupon = 1 − Y₀/Y₂ = 1 − 1.00/2.00 = 0.5      capital share = 0.5
+```
+
+**Step 3 — redeem.** Alice holds 100 of each leg:
+
+| Action | Burned | Raw received | Formula |
+|---|---|---|---|
+| `unwrapCapital(100, 0, 2)` | 100 Capital-0-2 | **50 raw** | `100 × (1 − 0.5)` |
+| `unwrapYield(100, 0, 2)` | 100 Yield-0-2 | **50 raw** | `100 × 0.5` |
+| `unwrap(100, 0, 2)` (both legs, anytime — even before maturity) | 100 + 100 | **100 raw** | always par |
+
+The **Yield leg's 50 raw is paid out of the same escrowed principal** — it is
+the portion of the pool that dividend events 0→2 "grew" on Alice's behalf,
+realized when she redeems. The Capital leg keeps the untouched principal.
+
+**Step 4 — later dividends don't stack.** In the example table above, dividend
+#7 lands at nonce 7 (`Y₇ = 2.50`). Alice forgets to redeem until then. Her
+payout **does not change**: the coupon is still computed from `Y₀ = 1.00` and
+`Y₂ = 2.00` — frozen historical checkpoints — not from the live multiplier.
+Her legs redeem 50 + 50 exactly as in June. Later windows can price the later
+dividends; hers are closed.
+
+**Step 5 — same target, different start, different claim.** Bob wraps 100 raw
+at nonce 1 with `lockNonces = 1` → window `(1, 2)`. He missed dividend #1 (it
+landed before he locked), and his window captures only dividend #2:
+
+| Holder | Window | Captured dividends | Coupon | 100 Yield leg pays | 100 Capital leg pays |
+|---|---|---|---|---|---|
+| Alice | (0, 2) | #1 + #2 | `1 − 1.00/2.00 = 0.50` | 50 raw | 50 raw |
+| Bob | (1, 2) | #2 only | `1 − 1.50/2.00 = 0.25` | 25 raw | 75 raw |
+
+This is why pairs are keyed by `(start, target)` and not by target alone: the
+start nonce defines *which* historical dividends a leg is entitled to.
+
+### 1.2 Why nonces, not dates
+
+Expiry is measured in **Yield events**, never in timestamps, because real-world
+yield timing is not knowable in advance: a dividend record date slips, a
+issuer delays a distribution, an announcement lands weeks late. A calendar
+expiry ("June 30") can fire *before* the yield event it was supposed to price
+— destroying the claim — or sit idle while a distribution is late. With
+nonces, a delayed dividend simply delays maturity ("the next 2 dividends,
+whenever they land") and nobody is penalized; payouts are frozen by *which
+events have happened*, not by when the clock said they should. The full
+treatment — including the failure mode this avoids — is in
+[TECHNICAL.md](TECHNICAL.md#part-2--expiry-and-nonce-based-locks).
+
 ---
 
 ## 2. Discovery: ERC-165 on the token

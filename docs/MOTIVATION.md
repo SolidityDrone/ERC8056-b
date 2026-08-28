@@ -21,6 +21,16 @@ accrue.
 
 Everything below serves these two outcomes.
 
+A design choice worth flagging early: windows expire in **Yield events
+(nonces), not dates**. Real-world yield timing cannot be promised — record
+dates slip, issuers delay distributions, announcements land late — so a
+calendar expiry can fire before the yield it was supposed to price and destroy
+a legitimate claim. Committing to "the next N dividends, whenever they land"
+makes a late distribution delay maturity instead of destroying it. The full
+reasoning is in [TECHNICAL.md](TECHNICAL.md#part-2--expiry-and-nonce-based-locks),
+and a worked numeric example of the split and redemption mechanics is in
+[INTEGRATION.md](INTEGRATION.md).
+
 ## The core limitation of ERC-8056
 
 ERC-8056 exposes a single composite `uiMultiplier`. When the off-chain issuer
