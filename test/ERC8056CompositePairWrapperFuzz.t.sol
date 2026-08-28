@@ -7,9 +7,9 @@ import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierCla
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @dev Port of the standalone wrapper fuzz suite to the token-side variant.
-///      No fee-on-transfer or decimals fuzz scenarios exist here: wrap/unwrap are
-///      internal ledger moves on an 18-decimal, full-metadata token (see the unit
-///      file header for the structural rationale).
+///      No decimals fuzz scenarios exist here: wrap/unwrap are internal ledger
+///      moves on an 18-decimal, full-metadata token (see the unit file header
+///      for the structural rationale).
 contract ERC8056CompositePairWrapperFuzzTest is ScalingTestBase {
     ERC8056CompositePairWrapper internal token;
 

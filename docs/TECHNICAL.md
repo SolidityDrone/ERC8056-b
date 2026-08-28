@@ -92,11 +92,12 @@ The Capital/Yield split can be shipped two ways, mirroring how **WETH is
 to ETH**: ETH defines the asset; a standalone wrapper adapts it for
 ERC-20-interoperable use.
 
-1. **Standalone wrapper.** `ERC8056PairWrapper` holds raw RWA and
+1. **Standalone wrapper.** A separate adapter contract holds raw RWA and
    mints a Capital LegToken and a Yield LegToken (one shared `LegToken`
    contract, deployed twice per window) against the extension's yield
    history. Clean separation, keeps the base token minimal, and lets *any*
    ERC-8056-compatible issuer opt in without changing their token.
+   Shipped on `main`; not part of this branch.
 2. **In-ERC integration.** The wrapping is folded directly into the token —
    [`ERC8056CompositePairWrapper`](../src/token-side/ERC8056CompositePairWrapper.sol)
    is the composite AND the Capital/Yield factory in one contract, advertised
@@ -301,9 +302,7 @@ is sound and composable.
 4. Optional Capital/Yield surface: deploy the token as
    `ERC8056CompositePairWrapper` so the composite itself implements
    `IERC8056PairWrapper` (ERC-165-discoverable, self-escrow `wrap`, no
-   registry — see [INTEGRATION.md](INTEGRATION.md)). The standalone
-   adapter + registry route (`ERC8056PairWrapperRegistry.deployOrGet`) remains
-   available on `main` for trustless deployments.
+   registry — see [INTEGRATION.md](INTEGRATION.md)).
 
 ### 4.2 Upgrading a live vanilla ERC-8056 beacon proxy
 

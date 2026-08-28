@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {LegToken} from "../src/wrapper/LegToken.sol";
+import {LegToken} from "../src/token-side/LegToken.sol";
 
 /// @dev Dedicated LegToken suite: metadata, decimals, minter immutability and
 ///      authorization, plus standard ERC20 behaviors the wrapper relies on.

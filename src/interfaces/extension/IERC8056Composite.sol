@@ -60,13 +60,6 @@ interface IERC8056Composite {
     /// @dev Composite multiplier at `timestamp` = product of all class factors at that time.
     function uiMultiplierAt(uint256 timestamp) external view returns (uint256);
 
-    /// @dev Cumulative multiplier for a single class at `timestamp`.
-    ///      Overload of uiScalingFactorAt with consistent naming.
-    function uiMultiplierAt(MultiplierClass scalingClass, uint256 timestamp) external view returns (uint256);
-
-    /// @dev Current cumulative multiplier for a single class (alias for uiScalingFactor).
-    function uiMultiplier(MultiplierClass scalingClass) external view returns (uint256);
-
     // ---- Nonce-based reads ----
 
     /// @dev Composite multiplier as of the era opened by the n-th event of any
@@ -76,9 +69,9 @@ interface IERC8056Composite {
     ///      even for extreme era-mixed factors or arbitrarily large nonces.
     function uiMultiplierAtNonce(uint256 nonce) external view returns (uint256);
 
-    /// @dev Cumulative multiplier for a single class at a past nonce.
+    /// @dev Cumulative factor for a single class at a past nonce of that class.
     ///      Nonce is 1-based (genesis is not an event).
-    function uiMultiplierAtNonce(MultiplierClass scalingClass, uint256 nonce) external view returns (uint256);
+    function uiScalingFactorAtNonce(MultiplierClass scalingClass, uint256 nonce) external view returns (uint256);
 
     /// @dev Number of effective scaling events for `scalingClass` (derived count
     ///      from checkpoint history). Genesis (index 0) is not counted; only

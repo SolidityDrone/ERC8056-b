@@ -12,9 +12,8 @@ contract. The stable surface protocols code against is
 implemented by the token and advertised through ERC-165 — there is no separate
 wrapper contract and no registry.
 
-> The standalone adapter + registry variant (`ERC8056PairWrapper` +
-> `ERC8056PairWrapperRegistry`) exists on `main` for trustless, multi-issuer
-> deployments. Same interface, same semantics — see §7.
+> A standalone adapter + registry variant with the same interface exists on
+> `main` for trustless, multi-issuer deployments (not part of this branch).
 
 ---
 
@@ -58,8 +57,8 @@ The token advertises both extension surfaces as independent interface IDs:
 import {IERC8056Composite} from "../src/interfaces/extension/IERC8056Composite.sol";
 import {IERC8056PairWrapper} from "../src/interfaces/wrapper/IERC8056PairWrapper.sol";
 
-bool isComposite = token.supportsInterface(type(IERC8056Composite).interfaceId);   // 0xa57626bb
-bool splitsItself = token.supportsInterface(type(IERC8056PairWrapper).interfaceId); // 0xf27375cb
+bool isComposite = token.supportsInterface(type(IERC8056Composite).interfaceId);   // 0xf9712df3
+bool splitsItself = token.supportsInterface(type(IERC8056PairWrapper).interfaceId); // 0x8a8c95d4
 ```
 
 - `composite = true, wrapper = false` → an ERC-8056 token without the split.
@@ -205,8 +204,8 @@ window.
   adds no new trust root.
 - **Self-escrow, no approvals.** `wrap` debits the caller internally
   (`_update(msg.sender, address(this), amount)`); payouts move escrow back the
-  same way. No `approve` ceremony, and no fee-on-transfer surface: the token
-  cannot fee on its own ledger, so `FeeOnTransferNotSupported` can never fire.
+  same way. No `approve` ceremony: every value movement is an internal ledger
+  update, with no external transfer to intercept.
 - **Legs are standard ERC-20.** `Pair` exposes them as `IERC20` to keep the
   interface concrete-token-free; minting/burning is internal to the token
   (the legs' `minter` is the token address). Legs inherit the token's 18
@@ -228,7 +227,7 @@ window.
 ## 7. References
 
 - Interface: [`IERC8056PairWrapper.sol`](../src/interfaces/wrapper/IERC8056PairWrapper.sol)
+- Leg receipt: [`LegToken.sol`](../src/token-side/LegToken.sol)
 - Implementation (this branch): [`ERC8056CompositePairWrapper.sol`](../src/token-side/ERC8056CompositePairWrapper.sol)
 - Extension: [`IERC8056Composite.sol`](../src/interfaces/extension/IERC8056Composite.sol)
 - Tests: [`ERC8056CompositePairWrapper.t.sol`](../test/ERC8056CompositePairWrapper.t.sol), [`ERC8056CompositePairWrapperFuzz.t.sol`](../test/ERC8056CompositePairWrapperFuzz.t.sol), [`ERC8056CompositePairWrapperInvariant.t.sol`](../test/ERC8056CompositePairWrapperInvariant.t.sol)
-- Standalone variant (on `main`): [`ERC8056PairWrapper.sol`](../src/wrapper/ERC8056PairWrapper.sol) + [`ERC8056PairWrapperRegistry.sol`](../src/wrapper/ERC8056PairWrapperRegistry.sol), tests [`ERC8056PairWrapper.t.sol`](../test/ERC8056PairWrapper.t.sol), [`ERC8056PairWrapperRegistry.t.sol`](../test/ERC8056PairWrapperRegistry.t.sol)

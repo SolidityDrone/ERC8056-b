@@ -8,7 +8,7 @@ with nonce-based (event-based) expiration.
 - [`ERC8056`](src/ERC8056.sol) — the base ERC-8056 reference implementation (single composite multiplier).
 - [`ERC8056Composite`](src/ERC8056Composite.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and a per-class checkpoint history that also serves as the yield-event log.
 - [`ERC8056CompositePairWrapper`](src/token-side/ERC8056CompositePairWrapper.sol) — **the wrapper, integrated in the token**: the composite is the Capital/Yield factory itself. `wrap` self-escrows (no approval), discovery is ERC-165 (`IERC8056PairWrapper`, `0xf27375cb`), and there is no registry — for centralized issuers that already own the multiplier. See [INTEGRATION](docs/INTEGRATION.md).
-- [`ERC8056PairWrapper`](src/wrapper/ERC8056PairWrapper.sol) — reference standalone adapter (separate contract + [`registry`](src/wrapper/ERC8056PairWrapperRegistry.sol), `transferFrom`-based) kept for trustless, multi-issuer deployments; same `IERC8056PairWrapper` interface. Shipped on `main`.
+- A standalone adapter + registry variant with the same `IERC8056PairWrapper` interface exists on `main` for trustless, multi-issuer deployments (not part of this branch).
 
 ## Why this exists
 
@@ -96,14 +96,10 @@ of 100 handler calls (~70 s) and is configured in `foundry.toml`.
 │   │   │   ├── IERC8056Composite.sol   # class extension interface
 │   │   │   └── IERC8056MultiplierClass.sol # enum { Supply, Yield, Other }
 │   │   └── wrapper/                # wrapper integration interfaces
-│   │       ├── IERC8056PairWrapper.sol
-│   │       └── IERC8056PairWrapperRegistry.sol
-│   ├── wrapper/
-│   │   ├── ERC8056PairWrapper.sol      # standalone adapter variant (reference; shipped on main)
-│   │   ├── ERC8056PairWrapperRegistry.sol # standalone discovery (reference; shipped on main)
-│   │   └── LegToken.sol               # fungible ERC-20 receipt (capital or yield leg)
+│   │       └── IERC8056PairWrapper.sol
 │   ├── token-side/
-│   │   └── ERC8056CompositePairWrapper.sol # the composite IS the wrapper (this branch)
+│   │   ├── ERC8056CompositePairWrapper.sol # the composite IS the wrapper (this branch)
+│   │   └── LegToken.sol               # fungible ERC-20 receipt (capital or yield leg)
 │   └── libraries/
 │       └── UIScalingMath.sol           # canonical composite math
 ├── test/                              # unit, fuzz, and invariant suites
@@ -154,10 +150,9 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 | `IERC8056PairWrapper` | `wrap` (self-escrow), `unwrap`/`unwrapYield`/`unwrapCapital` (all return raw released), `isMatured(start,target)`, `pairs`/`capitalToken`/`yieldToken`, `couponOf`/`capitalShareOf`, previews, per-window supplies, `currentNonce`, `windowBackingOf`, `rawLocked()`/`rawLockedOf` (deprecated) |
 
 Implemented by the token itself via [`ERC8056CompositePairWrapper`](src/token-side/ERC8056CompositePairWrapper.sol)
-and advertised through ERC-165 (`0xf27375cb`) alongside `IERC8056Composite`
-(`0xa57626bb`) — a vanilla-8056 token without the split answers
-`composite = true, wrapper = false`. A standalone adapter + registry variant
-with the same interface is kept on `main` for trustless deployments.
+and advertised through ERC-165 (`0x8a8c95d4`) alongside `IERC8056Composite`
+(`0xf9712df3`) — a vanilla-8056 token without the split answers
+`composite = true, wrapper = false`.
 See [INTEGRATION](docs/INTEGRATION.md) for the full consumer guide.
 
 ## Redemption model

@@ -116,10 +116,6 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         );
     }
 
-    function uiMultiplierAt(MultiplierClass scalingClass, uint256 timestamp) external view override returns (uint256) {
-        return uiScalingFactorAt(scalingClass, timestamp);
-    }
-
     function newUIMultiplier(MultiplierClass scalingClass) public view override returns (uint256) {
         return _pendingFactor(scalingClass);
     }
@@ -359,10 +355,6 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         return uiMultiplierAt(block.timestamp);
     }
 
-    function uiMultiplier(MultiplierClass scalingClass) external view override returns (uint256) {
-        return uiScalingFactor(scalingClass);
-    }
-
     function uiMultiplierAtNonce(uint256 nonce) external view override returns (uint256) {
         return _saturatingCompositeAtNonce(
             _clampedFactorAtNonce(MultiplierClass.Supply, nonce),
@@ -459,7 +451,12 @@ contract ERC8056Composite is IERC8056Cancel, ERC8056, IERC8056Composite {
         return result;
     }
 
-    function uiMultiplierAtNonce(MultiplierClass scalingClass, uint256 nonce) public view override returns (uint256) {
+    function uiScalingFactorAtNonce(MultiplierClass scalingClass, uint256 nonce)
+        public
+        view
+        override
+        returns (uint256)
+    {
         return classEventAtNonce(scalingClass, nonce).cumulativeMultiplier;
     }
 

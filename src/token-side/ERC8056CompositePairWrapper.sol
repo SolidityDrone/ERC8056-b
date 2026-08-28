@@ -9,7 +9,7 @@ import {IERC8056PairWrapper} from "../interfaces/wrapper/IERC8056PairWrapper.sol
 import {IERC8056Composite} from "../interfaces/extension/IERC8056Composite.sol";
 import {MultiplierClass} from "../interfaces/extension/IERC8056MultiplierClass.sol";
 import {UIScalingMath} from "../libraries/UIScalingMath.sol";
-import {LegToken} from "../wrapper/LegToken.sol";
+import {LegToken} from "../token-side/LegToken.sol";
 import {ERC8056Composite} from "../ERC8056Composite.sol";
 
 /**
@@ -27,10 +27,11 @@ import {ERC8056Composite} from "../ERC8056Composite.sol";
  *     authority that owns `uiMultiplier` anyway) ships the token with wrapping
  *     built in — the same trust anchor already required for the multiplier data.
  *   - `wrap` SELF-ESCROWS: the caller's raw balance is debited internally, so
- *     no `approve` transaction and no fee-on-transfer surface exist.
+ *     no `approve` transaction is ever needed and every value movement is an
+ *     internal ledger update.
  *   - Legs remain separate ERC-20 {LegToken}s per (startNonce, targetNonce)
- *     window, deployed lazily by the first wrapper of that window (same frozen
- *     coupon semantics, dedup, and solvency model as the standalone wrapper).
+ *     window, deployed lazily by the first wrapper of that window (frozen
+ *     coupon semantics, per-window dedup, and solvency model unchanged).
  */
 contract ERC8056CompositePairWrapper is ERC8056Composite, IERC8056PairWrapper, ReentrancyGuard {
     uint256 public override rawLocked;
@@ -100,8 +101,7 @@ contract ERC8056CompositePairWrapper is ERC8056Composite, IERC8056PairWrapper, R
         }
 
         rawLocked += rawAmount;
-        // Self-escrow: debit the wrapper directly. No external call, no approval,
-        // no fee-on-transfer surface (the token cannot fee on its own ledger).
+        // Self-escrow: debit the wrapper directly. No external call, no approval.
         _update(msg.sender, address(this), rawAmount);
 
         _capitalLeg(pair).mint(msg.sender, rawAmount);
@@ -347,9 +347,7 @@ contract ERC8056CompositePairWrapper is ERC8056Composite, IERC8056PairWrapper, R
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
-    /// @dev Release escrowed raw to `to`. Internal ledger move — no external
-    ///      transfer, no fee-on-transfer surface (the token cannot fee on its
-    ///      own `_update`), unlike the standalone wrapper's outbound guard.
+    /// @dev Release escrowed raw to `to` via an internal ledger update.
     function _releaseEscrow(address to, uint256 amount) internal {
         _update(address(this), to, amount);
     }

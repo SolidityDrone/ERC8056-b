@@ -589,9 +589,9 @@ contract ERC8056CompositeTest is ScalingTestBase {
         _scheduleScalingFactor(MultiplierClass.Other, 3e18, block.timestamp + 3 hours);
 
         uint256 ts = block.timestamp + 4 hours;
-        assertEq(token.uiMultiplierAt(MultiplierClass.Supply, ts), DOUBLE);
-        assertEq(token.uiMultiplierAt(MultiplierClass.Yield, ts), 1.5e18);
-        assertEq(token.uiMultiplierAt(MultiplierClass.Other, ts), 3e18);
+        assertEq(token.uiScalingFactorAt(MultiplierClass.Supply, ts), DOUBLE);
+        assertEq(token.uiScalingFactorAt(MultiplierClass.Yield, ts), 1.5e18);
+        assertEq(token.uiScalingFactorAt(MultiplierClass.Other, ts), 3e18);
         assertEq(token.uiMultiplierAt(ts), DOUBLE * 1.5e18 / 1e18 * 3e18 / 1e18);
     }
 
@@ -624,7 +624,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
         _scheduleScalingFactor(MultiplierClass.Supply, DOUBLE, t1);
         vm.warp(t1 + 1);
 
-        assertEq(token.uiMultiplierAtNonce(MultiplierClass.Supply, 1), DOUBLE);
+        assertEq(token.uiScalingFactorAtNonce(MultiplierClass.Supply, 1), DOUBLE);
     }
 
     function test_classEventAtNonce_pendingNotVisible_reverts() public {
@@ -1020,7 +1020,7 @@ contract ERC8056CompositeTest is ScalingTestBase {
         assertEq(ev.multiplierRatio, 0);
 
         // per-class nonce-0 read also stays neutral instead of reverting
-        assertEq(upgraded.uiMultiplierAtNonce(MultiplierClass.Yield, 0), NEUTRAL);
+        assertEq(upgraded.uiScalingFactorAtNonce(MultiplierClass.Yield, 0), NEUTRAL);
         // non-zero nonces still revert on empty history
         vm.expectRevert(ERC8056Composite.EventNotRecorded.selector);
         upgraded.classEventAtNonce(MultiplierClass.Yield, 1);
@@ -1336,9 +1336,9 @@ contract ERC8056CompositeTest is ScalingTestBase {
         uint256 past = block.timestamp - 1 days;
         assertEq(
             UIScalingMath.composeUiMultiplier(
-                upgraded.uiMultiplierAt(MultiplierClass.Supply, past),
-                upgraded.uiMultiplierAt(MultiplierClass.Yield, past),
-                upgraded.uiMultiplierAt(MultiplierClass.Other, past)
+                upgraded.uiScalingFactorAt(MultiplierClass.Supply, past),
+                upgraded.uiScalingFactorAt(MultiplierClass.Yield, past),
+                upgraded.uiScalingFactorAt(MultiplierClass.Other, past)
             ),
             upgraded.uiMultiplierAt(past)
         );

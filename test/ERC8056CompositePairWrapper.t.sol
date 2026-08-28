@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {ScalingTestBase} from "./ScalingTestBase.sol";
 import {ERC8056CompositePairWrapper} from "../src/token-side/ERC8056CompositePairWrapper.sol";
 import {IERC8056PairWrapper} from "../src/interfaces/wrapper/IERC8056PairWrapper.sol";
-import {LegToken} from "../src/wrapper/LegToken.sol";
+import {LegToken} from "../src/token-side/LegToken.sol";
 import {ERC8056Composite} from "../src/ERC8056Composite.sol";
 import {IERC8056Composite} from "../src/interfaces/extension/IERC8056Composite.sol";
 import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
@@ -19,13 +19,12 @@ import {ERC8056} from "../src/ERC8056.sol";
 ///      (one contract = stock token + composite + Capital/Yield factory).
 ///
 ///      Dropped on purpose — structurally impossible in this variant:
-///      - Fee-on-transfer tests (inbound FoT + late outbound-fee transition): wrap
-///        and unwrap are internal `_update` ledger moves; the token cannot fee on
-///        its own balance changes, so there is no FoT surface at all.
+///      - External transfer tests: wrap/unwrap are internal `_update` ledger
+///        moves of the token's own balance; there is no external transfer path.
 ///      - Custom-decimals passthrough and bare-metadata fallback: the token always
 ///        has 18 decimals and full ERC-20 metadata (name/symbol/decimals).
-///      - Registry tests: there is no ERC8056PairWrapperRegistry; discovery is a
-///        single `supportsInterface` call on the token itself.
+///      - Registry tests: there is no registry; discovery is a single
+///        `supportsInterface` call on the token itself.
 contract ERC8056CompositePairWrapperTest is ScalingTestBase {
     ERC8056CompositePairWrapper internal token;
 

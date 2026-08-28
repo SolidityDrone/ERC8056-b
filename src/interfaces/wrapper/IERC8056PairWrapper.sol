@@ -41,9 +41,6 @@ interface IERC8056PairWrapper {
     error InvalidAmount();
     error Locked();
     error PairNotFound();
-    /// @dev The underlying token changed balances by a different amount than the
-    ///      requested one (fee-on-transfer or similar); the wrapper does not support it.
-    error FeeOnTransferNotSupported();
 
     // ------------------------------------------------------------------ immutables
     /// @dev Raw RWA token this wrapper locks.
