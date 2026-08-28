@@ -1,5 +1,13 @@
 # ERC-8056 Improvement: Class-Decomposed UI Scaling & Capital/Yield Wrapping
 
+> **⚠️ Disclaimer — reference work, not production code.**
+> This repository is a *demonstration*: it exists to show ERC-8056 implementers
+> what their ecosystem could unlock if the current single-multiplier behavior
+> were steered toward class-decomposed scaling. It has not been audited, is not
+> battle-tested on mainnet, and is **not meant to be thrown into production**.
+> Treat it as a reference for design discussion and as a starting point for
+> your own implementation — not as a ready-to-ship contract.
+
 A Foundry (Solidity 0.8.24) reference implementation of an **ERC-8056
 improvement** that decomposes UI scaling into named classes and uses that
 decomposition to split an RWA token into **Capital** and **Yield** ERC-20 legs
