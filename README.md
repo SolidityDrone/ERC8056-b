@@ -7,17 +7,8 @@ with nonce-based (event-based) expiration.
 
 - [`ERC8056`](src/ERC8056.sol) — the base ERC-8056 reference implementation (single composite multiplier).
 - [`ERC8056Composite`](src/ERC8056Composite.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and a per-class checkpoint history that also serves as the yield-event log.
-- [`ERC8056PairWrapper`](src/wrapper/ERC8056PairWrapper.sol) — a standalone wrapper (WETH-for-ETH-style, i.e. a separate adapter contract rather than folded into the base token) that splits raw RWA into a Capital LegToken and a Yield LegToken (one shared `LegToken` contract, deployed twice per window) with frozen-delta, nonce-gated redemption. Protocols integrate against the stable [`IERC8056PairWrapper`](src/interfaces/wrapper/IERC8056PairWrapper.sol) surface, discovered via the canonical [`ERC8056PairWrapperRegistry`](src/wrapper/ERC8056PairWrapperRegistry.sol) — see [INTEGRATION](docs/INTEGRATION.md).
-
-> **Two wrapper solutions, two branches.** This branch
-> (`feat/token-side-wrapper`) additionally embeds the same Capital/Yield
-> splitting inside the token itself
-> ([`ERC8056CompositePairWrapper`](src/token-side/ERC8056CompositePairWrapper.sol)):
-> one contract is both the stock token and the wrapper, discovered via ERC-165,
-> with a self-escrow `wrap` (no approval) and no registry — for centralized
-> issuers that already own the multiplier. `main` keeps the standalone
-> adapter + registry for trustless deployments. Same `IERC8056PairWrapper`
-> interface in both; see [TOKEN_SIDE_WRAPPER](docs/TOKEN_SIDE_WRAPPER.md).
+- [`ERC8056CompositePairWrapper`](src/token-side/ERC8056CompositePairWrapper.sol) — **the wrapper, integrated in the token**: the composite is the Capital/Yield factory itself. `wrap` self-escrows (no approval), discovery is ERC-165 (`IERC8056PairWrapper`, `0xf27375cb`), and there is no registry — for centralized issuers that already own the multiplier. See [INTEGRATION](docs/INTEGRATION.md).
+- [`ERC8056PairWrapper`](src/wrapper/ERC8056PairWrapper.sol) — reference standalone adapter (separate contract + [`registry`](src/wrapper/ERC8056PairWrapperRegistry.sol), `transferFrom`-based) kept for trustless, multi-issuer deployments; same `IERC8056PairWrapper` interface. Shipped on `main`.
 
 ## Why this exists
 
@@ -108,16 +99,18 @@ of 100 handler calls (~70 s) and is configured in `foundry.toml`.
 │   │       ├── IERC8056PairWrapper.sol
 │   │       └── IERC8056PairWrapperRegistry.sol
 │   ├── wrapper/
-│   │   ├── ERC8056PairWrapper.sol      # Capital/Yield window wrapper
-│   │   ├── ERC8056PairWrapperRegistry.sol # canonical per-asset wrapper discovery
+│   │   ├── ERC8056PairWrapper.sol      # standalone adapter variant (reference; shipped on main)
+│   │   ├── ERC8056PairWrapperRegistry.sol # standalone discovery (reference; shipped on main)
 │   │   └── LegToken.sol               # fungible ERC-20 receipt (capital or yield leg)
+│   ├── token-side/
+│   │   └── ERC8056CompositePairWrapper.sol # the composite IS the wrapper (this branch)
 │   └── libraries/
 │       └── UIScalingMath.sol           # canonical composite math
 ├── test/                              # unit, fuzz, and invariant suites
 ├── docs/
 │   ├── MOTIVATION.md                  # why this proposal exists
 │   ├── TECHNICAL.md                   # extension spec, expiry, use cases
-│   ├── INTEGRATION.md                 # wrapper interface + registry guide
+│   ├── INTEGRATION.md                 # consumer guide: the in-token Capital/Yield split
 │   └── CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md  # oracle/valuation duality
 ```
 
@@ -154,13 +147,17 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 | `ERC8056Composite` | per-class `toUIAmount(raw, class)`, `toUIAmountAt`, `fromUIAmount` |
 | `UIScalingMath` | `composeUiMultiplier(Supply, Yield, Other)` |
 
-### Wrapper & registry (integration surface)
+### Wrapper (integration surface)
 
 | Interface | Methods |
 |-----------|---------|
-| `IERC8056PairWrapper` | `wrap`, `unwrap`/`unwrapYield`/`unwrapCapital`, `pairs`/`capitalToken`/`yieldToken`, `couponOf`/`capitalShareOf`, previews, per-window supplies, `currentNonce`, `windowBackingOf`, `rawLocked()`/`rawLockedOf` (deprecated) |
-| `IERC8056PairWrapperRegistry` | `deployOrGet`, `wrapperFor`, `wrapperCount`/`wrapperAt`, `underlyingOf` |
+| `IERC8056PairWrapper` | `wrap` (self-escrow), `unwrap`/`unwrapYield`/`unwrapCapital`, `pairs`/`capitalToken`/`yieldToken`, `couponOf`/`capitalShareOf`, previews, per-window supplies, `currentNonce`, `windowBackingOf`, `rawLocked()`/`rawLockedOf` (deprecated) |
 
+Implemented by the token itself via [`ERC8056CompositePairWrapper`](src/token-side/ERC8056CompositePairWrapper.sol)
+and advertised through ERC-165 (`0xf27375cb`) alongside `IERC8056Composite`
+(`0xa57626bb`) — a vanilla-8056 token without the split answers
+`composite = true, wrapper = false`. A standalone adapter + registry variant
+with the same interface is kept on `main` for trustless deployments.
 See [INTEGRATION](docs/INTEGRATION.md) for the full consumer guide.
 
 ## Redemption model

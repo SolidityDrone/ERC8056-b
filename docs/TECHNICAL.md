@@ -88,26 +88,29 @@ checkpoint index `n` (`1`-based events; genesis is not an event). This means:
 
 ### 1.5 Integration: in-ERC vs standalone (WETH-style)
 
-The Capital/Yield split is implemented as a **separate contract**
-(`ERC8056PairWrapper`) that consumes the extension. This mirrors how **WETH is
+The Capital/Yield split can be shipped two ways, mirroring how **WETH is
 to ETH**: ETH defines the asset; a standalone wrapper adapts it for
 ERC-20-interoperable use.
 
-Two equally valid integration paths:
-
-1. **Standalone wrapper (this repo).** `ERC8056PairWrapper` holds raw RWA and
+1. **Standalone wrapper.** `ERC8056PairWrapper` holds raw RWA and
    mints a Capital LegToken and a Yield LegToken (one shared `LegToken`
    contract, deployed twice per window) against the extension's yield
    history. Clean separation, keeps the base token minimal, and lets *any*
    ERC-8056-compatible issuer opt in without changing their token.
-2. **In-ERC integration.** The wrapping could be folded directly into the
-   token (mint Capital/Yield on the same contract). Simpler deployment, but
-   couples the base token to the wrapper's pairing and expiry logic.
+2. **In-ERC integration.** The wrapping is folded directly into the token —
+   [`ERC8056CompositePairWrapper`](../src/token-side/ERC8056CompositePairWrapper.sol)
+   is the composite AND the Capital/Yield factory in one contract, advertised
+   via ERC-165 (`IERC8056PairWrapper`), with a self-escrow `wrap` (no approval)
+   and no registry. Simpler deployment, one integration point, no approval
+   ceremony; suited to centralized issuers that already own the multiplier.
 
-This repo ships the standalone form (option 1). The distinction matters for a
-proposal: the extension defines the *standard* interface, and the splitter is
-an *optional consumer* that any compliant token can plug into — exactly like
-WETH sits alongside ETH rather than inside it.
+This branch ships the in-ERC form (option 2) as the primary integration — see
+[INTEGRATION.md](INTEGRATION.md). The standalone form (option 1) remains on
+`main` for trustless, multi-issuer deployments. For a proposal, the
+distinction matters: the extension defines the *standard* interface, and the
+splitter is an *optional consumer* any compliant token can adopt — in-ERC when
+the issuer is the authority, standalone when the wrapper deployer is a
+separate, less-trusted party.
 
 ---
 
@@ -286,8 +289,12 @@ is sound and composable.
 3. Verify ERC-165: the contract reports `IERC8056Composite`,
    `IERC8056NewUIMultiplier` (`0x4bd27648`), `IERC8056Cancel`, and the other
    base ERC-8056 interface IDs.
-4. Optional: register the asset with `ERC8056PairWrapperRegistry.deployOrGet`
-   to create its canonical Capital/Yield wrapper.
+4. Optional Capital/Yield surface: deploy the token as
+   `ERC8056CompositePairWrapper` so the composite itself implements
+   `IERC8056PairWrapper` (ERC-165-discoverable, self-escrow `wrap`, no
+   registry — see [INTEGRATION.md](INTEGRATION.md)). The standalone
+   adapter + registry route (`ERC8056PairWrapperRegistry.deployOrGet`) remains
+   available on `main` for trustless deployments.
 
 ### 4.2 Upgrading a live vanilla ERC-8056 beacon proxy
 

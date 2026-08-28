@@ -127,6 +127,7 @@ corporate-action pause workflow, and an oracle-consumer checklist — lives in
 [CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md](CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md).
 
 The mechanics — how classes, checkpoint history, and nonce-based expiry produce
-a deterministic, solvent split — are in [TECHNICAL.md](TECHNICAL.md). For
-protocols building on the Capital/Yield split, the wrapper and registry surface
-is documented in [INTEGRATION.md](INTEGRATION.md).
+a deterministic, solvent split — are in [TECHNICAL.md](TECHNICAL.md). The split
+ships inside the token itself (`ERC8056CompositePairWrapper` — ERC-165
+discoverable, self-escrow `wrap`, no registry); the consumer guide for
+protocols building on the Capital/Yield split is [INTEGRATION.md](INTEGRATION.md).
