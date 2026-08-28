@@ -42,7 +42,7 @@ lets a protocol support only one of them comfortably:
 | Mode | What is valued | Price source |
 |------|----------------|--------------|
 | **Derivative / stock-token mode** | The token as a total-return instrument: `token USD = feed price` | `latestRoundData()` as-is |
-| **RWA / real-world mode** | The token's real-world nominal exposure, tied to the listed per-share USD price of the stock | `feed price × 1e18 / uiMultiplier()` |
+| **RWA / real-world mode (digital twin)** | The token's real-world nominal exposure, tied to the listed per-share USD price of the stock | `feed price × 1e18 / uiMultiplier()` |
 
 ### Vanilla limitation
 

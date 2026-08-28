@@ -109,7 +109,7 @@ build on RWA without trusting a single scalar:
 - **Any** application that needs to separate "I own the asset" from "I own its
   growth" on a token that only publishes UI scaling.
 
-## Benefit 2 in detail — vanilla permits only derivative valuation
+## Benefit 2 in detail — vanilla forces derivative valuation; classes unlock the digital twin
 
 This matters beyond the wrapper, and it shows concretely in how price oracles
 already consume these tokens. Chainlink's
@@ -121,8 +121,27 @@ The point is that today the standard only allows protocols to integrate these
 tokens in a **derivative** way: the protocol does not value the token as an
 RWA, but as a *stock token* — an instrument whose USD price diverges from the
 real-world asset as multipliers accrue, and that is the price every oracle
-hands out. Eliding the multiplier with a single scalar is all-or-nothing:
-splits and dividends vanish together, with no attribution.
+hands out. Lending collateral, options marks, and liquidation math are all
+built on that drifting, multiplier-inflated price whether they want to be or
+not. Eliding the multiplier with a single scalar is all-or-nothing: splits and
+dividends vanish together, with no attribution.
+
+With classes, the same feed read supports **both representations**:
+
+- **Derivative mode** — feed price as-is: the total-return stock token, with
+  every reinvested dividend baked in.
+- **Digital-twin mode** — elide the Yield factor
+  (`feed ÷ uiScalingFactor(MultiplierClass.Yield)`) to recover a
+  split-adjusted price tied to the **real-world nominal value of the stock**;
+  elide the full multiplier to recover the raw per-share price. The accrued
+  yield becomes its own separately priceable object rather than being welded
+  into the price.
+
+So a lending market can collateralize against the *asset*, an options protocol
+can mark against the *nominal* value, and a settlement layer can reconcile
+against the real-world ledger — all from the same token and the same oracle,
+with no second data source. Which portion of the published price is accreted
+yield and which is a pure re-denomination is finally knowable on-chain.
 
 By upgrading to this proposal, the same Chainlink tokenized-equity feed can be
 read **both ways**: a protocol elides only the **Yield** portion of the price

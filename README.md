@@ -22,22 +22,35 @@ nonce-based (event-based) expiration.
 
 ERC-8056 adjusts a single UI multiplier, so the **reason** for a change is
 indistinguishable: a 2-for-1 split (supply change) and a dividend reinvestment
-(yield accretion) both move the same number. That makes it impossible to split
-a token into principal + yield on-chain, which is exactly what lending,
-options, and auction protocols need for RWA like Robinhood stock tokens.
+(yield accretion) both move the same number. That one ambiguity has two costs:
 
-This repo delivers **two benefits**:
+- You **cannot split** a token into principal + yield on-chain — the raw
+  material lending, options, and auction protocols need for RWA like
+  Robinhood stock tokens.
+- You **cannot un-mix price**: the token is forced to behave as a *derivative*
+  (a total-return stock token whose USD price drifts away from the real-world
+  asset as dividends compound), even when a protocol wants to price it as the
+  real-world asset itself.
+
+This repo delivers **two benefits**, one per cost:
 
 1. **Split into Capital and Yield LegTokens for DeFi.** The multiplier's
    yield-vs-supply attribution becomes knowable on-chain, so a token can be
    split into a fungible Capital LegToken (principal) and Yield LegToken
-   (accrued yield) with deterministic, event-accurate expiry — the primitive
-   lending, options, and auction protocols need.
-2. **Build protocols on the real-world value of the asset — not the STOCK
-   TOKEN price.** The yield portion of a multiplier change becomes elidable,
-   so the same Chainlink price feed lets a protocol value the token as the
-   real-world asset (nominal USD value of the underlying stock) instead of the
-   total-return stock-token price oracles hand out.
+   (accrued yield) with deterministic, event-accurate expiry — lending
+   protocols lend the principal and sell the yield; options write the coupon
+   as upside; auctions sell future distributions.
+2. **Choose your representation: derivative OR digital twin.** Because the
+   Yield portion of the multiplier becomes separable, a protocol reading the
+   same Chainlink price feed can treat the token **both ways**:
+   - *derivative mode* — feed price as-is (total-return stock token);
+   - *digital-twin mode* — elide the Yield factor (`feed ÷ uiScalingFactor(Yield)`)
+     to recover a split-adjusted price tied to the **real-world nominal value
+     of the stock**, instead of the multiplier-altered price oracles hand out.
+
+   Lending, options, and any valuation logic can therefore be built on the
+   real-world representation of the asset, not just its altered stock-token
+   price — without waiting for anyone to publish a second oracle.
 
 See [MOTIVATION](docs/MOTIVATION.md) and [TECHNICAL](docs/TECHNICAL.md).
 
