@@ -153,8 +153,10 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 | `IERC8056Conversion` | `toUIAmount(uint256)`, `fromUIAmount(uint256)` |
 | `IERC8056Balances` | `balanceOfUI(address)`, `totalSupplyUI()` |
 
-> **Note:** the composite implementation overrides the base reads with
-> composite semantics — see [Deviations](#deviations-from-vanilla-erc-8056).
+> **Note:** the composite implementation overrides some base reads with
+> composite semantics — see the
+> [TECHNICAL deviations appendix](docs/TECHNICAL.md#appendix--deviations-from-vanilla-erc-8056)
+> and [Retrocompatibility](#retrocompatibility-with-existing-8056-integrations).
 
 ### Extension (class decomposition)
 
@@ -189,21 +191,40 @@ the target nonce from historical checkpoints only. Because `coupon + share = 1`,
 every pair's total claim equals its deposit and the shared raw vault stays
 solvent by construction.
 
-## Deviations from vanilla ERC-8056
+## Retrocompatibility with existing 8056 integrations
 
-The composite implementation keeps every vanilla ERC-8056 interface ID intact,
-but a few base-interface reads/writes have composite semantics:
+Protocols already integrated against vanilla ERC-8056 — reading
+`uiMultiplier()`, pending state, and events from stock tokens as deployed on
+Robinhood Chain — keep working unchanged when the issuer upgrades to the
+composite:
 
-| # | Deviation | Vanilla behavior | This implementation |
-|---|-----------|------------------|---------------------|
-| 1 | Legacy 2-arg `setUIMultiplier(uint256,uint256)` | writes dead single-multiplier storage | delegates to the **Supply** class; emits both `UIScalingFactorUpdated` (empty announcement fields) and `UIMultiplierUpdated` |
-| 2 | Base `newUIMultiplier()` | the single pending multiplier | product over classes with a **live pending announcement**; when nothing is pending anywhere, the active composite (== `uiMultiplier()`) — no phantom update |
-| 3 | Base `effectiveAt()` | the single pending effective timestamp (stays nonzero after landing until overwritten) | earliest pending `effectiveAt` across classes; `0` whenever nothing is pending on any class — stricter than vanilla, which leaves a stale landed timestamp |
-| 4 | Base cancel (`cancelPendingUIMultiplier()`) | cancels the single pending update | cancels **every** class with a live pending announcement (vanilla behavior generalized); reverts `NothingToCancel` when none pending |
-| 5 | Composite-at-nonce `uiMultiplierAtNonce(n)` | n/a (new view) | per-class clamping: each class uses `min(nonce, classNonce)`, `0 → 1e18`; saturates at `type(uint256).max` instead of reverting for extreme factors or large nonces; converges to `uiMultiplier()` |
-| 6 | Reads between a proxy upgrade and the first schedule | vanilla values from its own slots | composite reads serve the inherited vanilla slots (denomination + pending preserved); history/nonce views stay empty until genesis is bootstrapped |
-| 7 | Schedule notice | any future timestamp | optional issuer self-restraint: after `setMinNoticePeriod(seconds)` every schedule must be ≥ `minNoticePeriod` away (default 0 = vanilla-compatible; capped at 3650 days) |
-| 8 | First schedule on an upgraded proxy with an unlanded vanilla pending | vanilla update stays in its slots until landing/cancel | reverts `VanillaPendingUpdate(effectiveAt)`; resolve by letting the vanilla update land or cancelling it (legacy cancel keeps exact vanilla semantics during the window) |
+- **Interface IDs byte-identical.** Every vanilla ID (`0xa60bf13d`,
+  `0x4bd27648`, `0x57854fc3`, `0xd890fd71`) is preserved; cancellation lives in
+  its own optional interface so the pending-multiplier ID is untouched. All
+  pinned by regression tests.
+- **Reads are identical.** `uiMultiplier()`, `toUIAmount`, `fromUIAmount`,
+  `balanceOfUI`, `totalSupplyUI` return the same values through the upgrade,
+  the first schedule, and every later state — verified by a differential suite
+  that drives a vanilla token and the upgraded composite through identical
+  updates.
+- **The pending-state idiom is preserved — and made stricter.**
+  `effectiveAt() != 0` still signals an incoming change; when nothing is
+  pending, `effectiveAt()` reads `0` (vanilla keeps a stale landed timestamp,
+  which can false-positive naive checks) and `newUIMultiplier()` equals
+  `uiMultiplier()`, so no phantom update is ever implied.
+- **Upgrades are non-disruptive.** No initialization transaction; the display
+  denomination is preserved from the moment of upgrade (inherited vanilla
+  slots are served until the first schedule); and an unlanded vanilla pending
+  update is never silently dropped — the first classed schedule reverts until
+  it lands or is cancelled via the legacy cancel, which keeps exact vanilla
+  semantics during that window.
+- **Events keep their signatures.** `UIMultiplierUpdated` and
+  `UIMultiplierCancelled` are unchanged; payloads describe the projected
+  composite once classes are pending (declared in the interface docs).
+
+The complete itemized list of semantic deviations (8 items, with vanilla vs.
+this implementation behavior) is in the
+[TECHNICAL appendix](docs/TECHNICAL.md#appendix--deviations-from-vanilla-erc-8056).
 
 ## License
 
