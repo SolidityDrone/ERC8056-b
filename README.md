@@ -15,7 +15,7 @@ nonce-based (event-based) expiration.
 
 - [`ERC8056`](src/ERC8056.sol) — the base ERC-8056 reference implementation (single composite multiplier).
 - [`ERC8056Composite`](src/ERC8056Composite.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and a per-class checkpoint history that also serves as the yield-event log.
-- [`ERC8056CompositePairWrapper`](src/ERC8056CompositePairWrapper.sol) — **the wrapper, integrated in the token**: the composite is the Capital/Yield factory itself. `wrap` self-escrows (no approval), discovery is ERC-165 (`IERC8056PairWrapper`, `0xf27375cb`), and there is no registry — for centralized issuers that already own the multiplier. See [INTEGRATION](docs/INTEGRATION.md).
+- [`ERC8056CompositePairWrapper`](src/ERC8056CompositePairWrapper.sol) — **the wrapper, integrated in the token**: the composite is the Capital/Yield factory itself. `wrap` self-escrows (no approval), discovery is ERC-165 (`IERC8056PairWrapper`, `0x8a8c95d4`), and there is no registry — for centralized issuers that already own the multiplier. See [INTEGRATION](docs/INTEGRATION.md).
 - A standalone adapter + registry variant with the same `IERC8056PairWrapper` interface — the earlier, pre-in-token implementation — is archived on the [`legacy/standalone-wrapper-registry`](../../tree/legacy/standalone-wrapper-registry) branch for trustless, multi-issuer deployments.
 
 ## Why this exists

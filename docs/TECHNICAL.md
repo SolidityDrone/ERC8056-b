@@ -105,7 +105,7 @@ ERC-20-interoperable use.
    and no registry. Simpler deployment, one integration point, no approval
    ceremony; suited to centralized issuers that already own the multiplier.
 
-This branch ships the in-ERC form (option 2) as the primary integration — see
+This implementation ships the in-ERC form (option 2) as the primary integration — see
 [INTEGRATION.md](INTEGRATION.md). The standalone form (option 1) remains on
 the `legacy/standalone-wrapper-registry` branch for trustless, multi-issuer
 deployments. For a proposal, the
