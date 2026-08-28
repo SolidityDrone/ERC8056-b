@@ -4,8 +4,8 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC8056CompositePairWrapper} from "../src/ERC8056CompositePairWrapper.sol";
-import {IERC8056PairWrapper} from "../src/interfaces/wrapper/IERC8056PairWrapper.sol";
-import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
+import {IERC8056PairWrapper} from "../src/interfaces/extension/wrapper/IERC8056PairWrapper.sol";
+import {MultiplierClass} from "../src/interfaces/extension/composite/IERC8056MultiplierClass.sol";
 
 /// @dev Action handler for the embedded wrapper invariant suite. Every
 ///      entrypoint either performs an operation or reverts; asserts inside

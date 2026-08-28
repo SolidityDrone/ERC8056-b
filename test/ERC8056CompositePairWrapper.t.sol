@@ -3,11 +3,11 @@ pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
 import {ERC8056CompositePairWrapper} from "../src/ERC8056CompositePairWrapper.sol";
-import {IERC8056PairWrapper} from "../src/interfaces/wrapper/IERC8056PairWrapper.sol";
+import {IERC8056PairWrapper} from "../src/interfaces/extension/wrapper/IERC8056PairWrapper.sol";
 import {LegToken} from "../src/LegToken.sol";
 import {ERC8056Composite} from "../src/ERC8056Composite.sol";
-import {IERC8056Composite} from "../src/interfaces/extension/IERC8056Composite.sol";
-import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
+import {IERC8056Composite} from "../src/interfaces/extension/composite/IERC8056Composite.sol";
+import {MultiplierClass} from "../src/interfaces/extension/composite/IERC8056MultiplierClass.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";

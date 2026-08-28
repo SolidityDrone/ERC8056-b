@@ -100,11 +100,12 @@ of 100 handler calls (~70 s) and is configured in `foundry.toml`.
 │   │   │   ├── IERC8056Balances.sol    # balanceOfUI/totalSupplyUI
 │   │   │   ├── IERC8056NewUIMultiplier.sol # newUIMultiplier/effectiveAt (spec ID 0x4bd27648)
 │   │   │   └── IERC8056Cancel.sol      # cancelPendingUIMultiplier/UIMultiplierCancelled
-│   │   ├── extension/              # extension-only interfaces
-│   │   │   ├── IERC8056Composite.sol   # class extension interface
-│   │   │   └── IERC8056MultiplierClass.sol # enum { Supply, Yield, Other }
-│   │   └── wrapper/                # wrapper integration interfaces
-│   │       └── IERC8056PairWrapper.sol
+│   │   ├── extension/              # extension interfaces (both are optional extensions of 8056)
+│   │   │   ├── composite/          # class-decomposed scaling extension
+│   │   │   │   ├── IERC8056Composite.sol   # class extension interface
+│   │   │   │   └── IERC8056MultiplierClass.sol # enum { Supply, Yield, Other }
+│   │   │   └── wrapper/            # Capital/Yield split extension
+│   │   │       └── IERC8056PairWrapper.sol
 │   ├── ERC8056CompositePairWrapper.sol  # the composite IS the wrapper
 │   ├── LegToken.sol                   # fungible ERC-20 receipt (capital or yield leg)
 │   └── libraries/

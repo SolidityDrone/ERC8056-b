@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
 import {ERC8056CompositePairWrapper} from "../src/ERC8056CompositePairWrapper.sol";
-import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
+import {MultiplierClass} from "../src/interfaces/extension/composite/IERC8056MultiplierClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @dev Fuzz suite for the embedded Capital/Yield wrapper.

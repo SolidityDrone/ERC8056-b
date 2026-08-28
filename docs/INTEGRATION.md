@@ -8,7 +8,7 @@ On this branch, the split ships **inside the ERC-8056 token itself**:
 [`ERC8056CompositePairWrapper`](../src/ERC8056CompositePairWrapper.sol)
 is the composite token (classes, schedules, history) AND the pair factory in one
 contract. The stable surface protocols code against is
-[`IERC8056PairWrapper`](../src/interfaces/wrapper/IERC8056PairWrapper.sol),
+[`IERC8056PairWrapper`](../src/interfaces/extension/wrapper/IERC8056PairWrapper.sol),
 implemented by the token and advertised through ERC-165 — there is no separate
 wrapper contract and no registry.
 
@@ -55,8 +55,8 @@ escrow stays solvent by construction.
 The token advertises both extension surfaces as independent interface IDs:
 
 ```solidity
-import {IERC8056Composite} from "../src/interfaces/extension/IERC8056Composite.sol";
-import {IERC8056PairWrapper} from "../src/interfaces/wrapper/IERC8056PairWrapper.sol";
+import {IERC8056Composite} from "../src/interfaces/extension/composite/IERC8056Composite.sol";
+import {IERC8056PairWrapper} from "../src/interfaces/extension/wrapper/IERC8056PairWrapper.sol";
 
 bool isComposite = token.supportsInterface(type(IERC8056Composite).interfaceId);   // 0xf9712df3
 bool splitsItself = token.supportsInterface(type(IERC8056PairWrapper).interfaceId); // 0x8a8c95d4
@@ -227,8 +227,8 @@ window.
 
 ## 7. References
 
-- Interface: [`IERC8056PairWrapper.sol`](../src/interfaces/wrapper/IERC8056PairWrapper.sol)
+- Interface: [`IERC8056PairWrapper.sol`](../src/interfaces/extension/wrapper/IERC8056PairWrapper.sol)
 - Leg receipt: [`LegToken.sol`](../src/LegToken.sol)
 - Implementation (this branch): [`ERC8056CompositePairWrapper.sol`](../src/ERC8056CompositePairWrapper.sol)
-- Extension: [`IERC8056Composite.sol`](../src/interfaces/extension/IERC8056Composite.sol)
+- Extension: [`IERC8056Composite.sol`](../src/interfaces/extension/composite/IERC8056Composite.sol)
 - Tests: [`ERC8056CompositePairWrapper.t.sol`](../test/ERC8056CompositePairWrapper.t.sol), [`ERC8056CompositePairWrapperFuzz.t.sol`](../test/ERC8056CompositePairWrapperFuzz.t.sol), [`ERC8056CompositePairWrapperInvariant.t.sol`](../test/ERC8056CompositePairWrapperInvariant.t.sol)
