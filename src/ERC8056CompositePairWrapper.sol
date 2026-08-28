@@ -5,21 +5,20 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IERC8056PairWrapper} from "../interfaces/wrapper/IERC8056PairWrapper.sol";
-import {IERC8056Composite} from "../interfaces/extension/IERC8056Composite.sol";
-import {MultiplierClass} from "../interfaces/extension/IERC8056MultiplierClass.sol";
-import {UIScalingMath} from "../libraries/UIScalingMath.sol";
-import {LegToken} from "../token-side/LegToken.sol";
-import {ERC8056Composite} from "../ERC8056Composite.sol";
+import {IERC8056PairWrapper} from "./interfaces/wrapper/IERC8056PairWrapper.sol";
+import {IERC8056Composite} from "./interfaces/extension/IERC8056Composite.sol";
+import {MultiplierClass} from "./interfaces/extension/IERC8056MultiplierClass.sol";
+import {UIScalingMath} from "./libraries/UIScalingMath.sol";
+import {LegToken} from "./LegToken.sol";
+import {ERC8056Composite} from "./ERC8056Composite.sol";
 
 /**
  * @title ERC8056CompositePairWrapper
- * @notice The token-side variant of the Capital/Yield wrapper: the pair-splitting
- *         logic lives INSIDE the ERC-8056 composite token itself, advertised via
- *         ERC-165 (`IERC8056PairWrapper` interface ID), instead of a separate
- *         adapter + registry.
+ * @notice The Capital/Yield wrapper, integrated directly in the ERC-8056
+ *         composite token: one contract is the stock token, the composite and
+ *         the pair factory. The wrapper surface is advertised via ERC-165
+ *         (`IERC8056PairWrapper` interface ID).
  *
- *   Integration model (vs. the standalone {ERC8056PairWrapper} on `main`):
  *   - One deployed contract is BOTH the stock token and the Capital/Yield
  *     factory: `underlying()` and `scaledUnderlying()` both return the token.
  *   - No registry, no approval ceremony. Discovery is `supportsInterface` on the

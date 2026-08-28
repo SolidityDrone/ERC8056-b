@@ -2,12 +2,12 @@
 pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
-import {ERC8056CompositePairWrapper} from "../src/token-side/ERC8056CompositePairWrapper.sol";
+import {ERC8056CompositePairWrapper} from "../src/ERC8056CompositePairWrapper.sol";
 import {ERC8056CompositePairWrapperHandler} from "./ERC8056CompositePairWrapperHandler.sol";
 import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-/// @dev Port of the standalone wrapper invariant suite to the token-side variant.
+/// @dev Invariant suite for the embedded Capital/Yield wrapper.
 ///      Same ghost-variable invariants, but escrow = token.balanceOf(address(token))
 ///      (the token self-escrows; there is no separate wrapper vault).
 contract ERC8056CompositePairWrapperInvariantTest is ScalingTestBase {

@@ -99,7 +99,7 @@ ERC-20-interoperable use.
    ERC-8056-compatible issuer opt in without changing their token.
    Archived on the `legacy/standalone-wrapper-registry` branch.
 2. **In-ERC integration.** The wrapping is folded directly into the token —
-   [`ERC8056CompositePairWrapper`](../src/token-side/ERC8056CompositePairWrapper.sol)
+   [`ERC8056CompositePairWrapper`](../src/ERC8056CompositePairWrapper.sol)
    is the composite AND the Capital/Yield factory in one contract, advertised
    via ERC-165 (`IERC8056PairWrapper`), with a self-escrow `wrap` (no approval)
    and no registry. Simpler deployment, one integration point, no approval

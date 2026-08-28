@@ -2,11 +2,11 @@
 pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
-import {ERC8056CompositePairWrapper} from "../src/token-side/ERC8056CompositePairWrapper.sol";
+import {ERC8056CompositePairWrapper} from "../src/ERC8056CompositePairWrapper.sol";
 import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-/// @dev Port of the standalone wrapper fuzz suite to the token-side variant.
+/// @dev Fuzz suite for the embedded Capital/Yield wrapper.
 ///      No decimals fuzz scenarios exist here: wrap/unwrap are internal ledger
 ///      moves on an 18-decimal, full-metadata token (see the unit file header
 ///      for the structural rationale).

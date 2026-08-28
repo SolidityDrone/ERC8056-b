@@ -5,7 +5,7 @@ top of ERC-8056's Capital/Yield split — auctions, options, and lending protoco
 that need a **principal leg** and a **yield leg** of the same raw RWA token.
 
 On this branch, the split ships **inside the ERC-8056 token itself**:
-[`ERC8056CompositePairWrapper`](../src/token-side/ERC8056CompositePairWrapper.sol)
+[`ERC8056CompositePairWrapper`](../src/ERC8056CompositePairWrapper.sol)
 is the composite token (classes, schedules, history) AND the pair factory in one
 contract. The stable surface protocols code against is
 [`IERC8056PairWrapper`](../src/interfaces/wrapper/IERC8056PairWrapper.sol),
@@ -228,7 +228,7 @@ window.
 ## 7. References
 
 - Interface: [`IERC8056PairWrapper.sol`](../src/interfaces/wrapper/IERC8056PairWrapper.sol)
-- Leg receipt: [`LegToken.sol`](../src/token-side/LegToken.sol)
-- Implementation (this branch): [`ERC8056CompositePairWrapper.sol`](../src/token-side/ERC8056CompositePairWrapper.sol)
+- Leg receipt: [`LegToken.sol`](../src/LegToken.sol)
+- Implementation (this branch): [`ERC8056CompositePairWrapper.sol`](../src/ERC8056CompositePairWrapper.sol)
 - Extension: [`IERC8056Composite.sol`](../src/interfaces/extension/IERC8056Composite.sol)
 - Tests: [`ERC8056CompositePairWrapper.t.sol`](../test/ERC8056CompositePairWrapper.t.sol), [`ERC8056CompositePairWrapperFuzz.t.sol`](../test/ERC8056CompositePairWrapperFuzz.t.sol), [`ERC8056CompositePairWrapperInvariant.t.sol`](../test/ERC8056CompositePairWrapperInvariant.t.sol)

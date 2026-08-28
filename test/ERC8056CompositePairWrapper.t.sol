@@ -2,9 +2,9 @@
 pragma solidity ^0.8.24;
 
 import {ScalingTestBase} from "./ScalingTestBase.sol";
-import {ERC8056CompositePairWrapper} from "../src/token-side/ERC8056CompositePairWrapper.sol";
+import {ERC8056CompositePairWrapper} from "../src/ERC8056CompositePairWrapper.sol";
 import {IERC8056PairWrapper} from "../src/interfaces/wrapper/IERC8056PairWrapper.sol";
-import {LegToken} from "../src/token-side/LegToken.sol";
+import {LegToken} from "../src/LegToken.sol";
 import {ERC8056Composite} from "../src/ERC8056Composite.sol";
 import {IERC8056Composite} from "../src/interfaces/extension/IERC8056Composite.sol";
 import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
@@ -14,8 +14,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC8056} from "../src/ERC8056.sol";
 
-/// @dev Port of the standalone wrapper suite (test/ERC8056PairWrapper.t.sol) to the
-///      token-side variant, where the ERC-8056 composite token IS the pair wrapper
+/// @dev Suite for the embedded Capital/Yield wrapper: the variant where the
+///      ERC-8056 composite token IS the pair wrapper
 ///      (one contract = stock token + composite + Capital/Yield factory).
 ///
 ///      Dropped on purpose — structurally impossible in this variant:
@@ -929,7 +929,7 @@ contract ERC8056CompositePairWrapperTest is ScalingTestBase {
         assertEq(upgraded.balanceOf(address(proxy)), 0, "self-escrow drained");
     }
 
-    /// @dev Migration guard on the token-side variant: while a live vanilla pending
+    /// @dev Migration guard on the embedded wrapper: while a live vanilla pending
     ///      exists, the first classed schedule reverts VanillaPendingUpdate (the
     ///      bootstrap guard). Wrap itself is view-bootstrap-safe, but a wrapper
     ///      window that needs a priced nonce (lockNonces > 0) requires the issuer

@@ -6,7 +6,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ERC8056} from "../src/ERC8056.sol";
 import {ERC8056Composite} from "../src/ERC8056Composite.sol";
 import {MultiplierClass} from "../src/interfaces/extension/IERC8056MultiplierClass.sol";
-import {LegToken} from "../src/token-side/LegToken.sol";
+import {LegToken} from "../src/LegToken.sol";
 
 /// @dev Negative access-control coverage: every privileged entry point must
 ///      revert for non-owners with OZ's OwnableUnauthorizedAccount, and LegToken
