@@ -279,6 +279,33 @@ contract ERC8056PairWrapperTest is ScalingTestBase {
         wrapper.isMatured(9, 10);
     }
 
+    function test_redemptions_returnRawAmounts_matchingPreviews() public {
+        (uint256 s, uint256 t) = _wrapLocked(alice, RAW_STAKE, 2);
+
+        // combined unwrap: returns exactly the burned amount, anytime
+        vm.prank(alice);
+        uint256 combinedOut = wrapper.unwrap(10 ether, s, t);
+        assertEq(combinedOut, 10 ether);
+
+        // mature the window: nonce -> 2, Yield 1e18 -> 2e18 => coupon 0.5e18
+        _advanceNonce(1 days);
+        _applyYieldDelta(2 * NEUTRAL, 1 days);
+
+        vm.prank(alice);
+        uint256 yieldOut = wrapper.unwrapYield(50 ether, s, t);
+        assertEq(yieldOut, wrapper.previewUnwrapYield(50 ether, s, t));
+        assertEq(yieldOut, 25 ether);
+
+        vm.prank(alice);
+        uint256 capitalOut = wrapper.unwrapCapital(50 ether, s, t);
+        assertEq(capitalOut, wrapper.previewUnwrapCapital(50 ether, s, t));
+        assertEq(capitalOut, 25 ether);
+
+        // combined preview splits exactly to the amount: capital + yield legs
+        (uint256 cRaw, uint256 yRaw) = wrapper.previewUnwrap(50 ether, s, t);
+        assertEq(cRaw + yRaw, 50 ether);
+    }
+
     function test_wrap_capturesStartNonce() public {
         _advanceNonce(1 days); // nonce 1
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 5);

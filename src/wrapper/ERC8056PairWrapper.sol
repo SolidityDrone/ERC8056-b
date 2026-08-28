@@ -133,7 +133,11 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard, ERC165 {
     /// @notice Burn `amount` of BOTH legs of window (start, target); receive exactly `amount`.
     /// @dev The leg split in the event follows the frozen shares once the target is
     ///      effective; before that the whole amount is reported as capital.
-    function unwrap(uint256 amount, uint256 startNonce, uint256 targetNonce) external nonReentrant {
+    function unwrap(uint256 amount, uint256 startNonce, uint256 targetNonce)
+        external
+        nonReentrant
+        returns (uint256 rawOut)
+    {
         if (amount == 0) revert InvalidAmount();
         IERC8056PairWrapper.Pair storage pair = _requirePair(startNonce, targetNonce);
 
@@ -144,6 +148,7 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard, ERC165 {
         rawLocked -= amount;
 
         _transferOut(msg.sender, amount);
+        rawOut = amount;
 
         emit Unwrapped(msg.sender, startNonce, targetNonce, amount, capitalRawOut, yieldLegRawOut);
     }
@@ -153,13 +158,17 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard, ERC165 {
     // ------------------------------------------------------------------
     /// @notice Burn `amount` yield tokens of window (start, target) for `amount * coupon` raw.
     /// @dev Only after `getClassNonce(MultiplierClass.Yield) >= targetNonce`; payout is frozen at the target multiplier.
-    function unwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce) external nonReentrant {
+    function unwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce)
+        external
+        nonReentrant
+        returns (uint256 rawOut)
+    {
         if (amount == 0) revert InvalidAmount();
         IERC8056PairWrapper.Pair storage pair = _requirePair(startNonce, targetNonce);
         if (scaledUnderlying.getClassNonce(MultiplierClass.Yield) < targetNonce) revert Locked();
 
         uint256 coupon = _couponOf(startNonce, targetNonce);
-        uint256 rawOut = Math.mulDiv(amount, coupon, UIScalingMath.MULTIPLIER_DECIMALS);
+        rawOut = Math.mulDiv(amount, coupon, UIScalingMath.MULTIPLIER_DECIMALS);
         _yieldLeg(pair).burn(msg.sender, amount);
         rawLocked -= rawOut;
 
@@ -170,13 +179,17 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard, ERC165 {
 
     /// @notice Burn `amount` capital tokens of window (start, target) for `amount * (1 - coupon)` raw.
     /// @dev Only after `getClassNonce(MultiplierClass.Yield) >= targetNonce`; payout is frozen at the target multiplier.
-    function unwrapCapital(uint256 amount, uint256 startNonce, uint256 targetNonce) external nonReentrant {
+    function unwrapCapital(uint256 amount, uint256 startNonce, uint256 targetNonce)
+        external
+        nonReentrant
+        returns (uint256 rawOut)
+    {
         if (amount == 0) revert InvalidAmount();
         IERC8056PairWrapper.Pair storage pair = _requirePair(startNonce, targetNonce);
         if (scaledUnderlying.getClassNonce(MultiplierClass.Yield) < targetNonce) revert Locked();
 
         uint256 share = UIScalingMath.MULTIPLIER_DECIMALS - _couponOf(startNonce, targetNonce);
-        uint256 rawOut = Math.mulDiv(amount, share, UIScalingMath.MULTIPLIER_DECIMALS);
+        rawOut = Math.mulDiv(amount, share, UIScalingMath.MULTIPLIER_DECIMALS);
         _capitalLeg(pair).burn(msg.sender, amount);
         rawLocked -= rawOut;
 

@@ -151,13 +151,16 @@ interface IERC8056PairWrapper {
     function wrap(uint256 rawAmount, uint256 lockNonces) external returns (uint256 startNonce, uint256 targetNonce);
 
     /// @dev Burn both legs of window (start, target); receive exactly `amount`, anytime.
-    function unwrap(uint256 amount, uint256 startNonce, uint256 targetNonce) external;
+    ///      Returns the raw underlying amount released (== `amount`).
+    function unwrap(uint256 amount, uint256 startNonce, uint256 targetNonce) external returns (uint256 rawOut);
 
     /// @dev Burn `amount` yield leg of window (start, target) for `amount * coupon`.
     ///      Only after getClassNonce(MultiplierClass.Yield) >= targetNonce.
-    function unwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce) external;
+    ///      Returns the raw underlying amount released (`amount * coupon`).
+    function unwrapYield(uint256 amount, uint256 startNonce, uint256 targetNonce) external returns (uint256 rawOut);
 
     /// @dev Burn `amount` capital leg of window (start, target) for `amount * (1 - coupon)`.
     ///      Only after getClassNonce(MultiplierClass.Yield) >= targetNonce.
-    function unwrapCapital(uint256 amount, uint256 startNonce, uint256 targetNonce) external;
+    ///      Returns the raw underlying amount released (`amount * capitalShare`).
+    function unwrapCapital(uint256 amount, uint256 startNonce, uint256 targetNonce) external returns (uint256 rawOut);
 }
