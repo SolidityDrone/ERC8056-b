@@ -9,6 +9,16 @@ with nonce-based (event-based) expiration.
 - [`ERC8056Composite`](src/ERC8056Composite.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and a per-class checkpoint history that also serves as the yield-event log.
 - [`ERC8056PairWrapper`](src/wrapper/ERC8056PairWrapper.sol) — a standalone wrapper (WETH-for-ETH-style, i.e. a separate adapter contract rather than folded into the base token) that splits raw RWA into a Capital LegToken and a Yield LegToken (one shared `LegToken` contract, deployed twice per window) with frozen-delta, nonce-gated redemption. Protocols integrate against the stable [`IERC8056PairWrapper`](src/interfaces/wrapper/IERC8056PairWrapper.sol) surface, discovered via the canonical [`ERC8056PairWrapperRegistry`](src/wrapper/ERC8056PairWrapperRegistry.sol) — see [INTEGRATION](docs/INTEGRATION.md).
 
+> **Two wrapper solutions, two branches.** This branch
+> (`feat/token-side-wrapper`) additionally embeds the same Capital/Yield
+> splitting inside the token itself
+> ([`ERC8056CompositePairWrapper`](src/token-side/ERC8056CompositePairWrapper.sol)):
+> one contract is both the stock token and the wrapper, discovered via ERC-165,
+> with a self-escrow `wrap` (no approval) and no registry — for centralized
+> issuers that already own the multiplier. `main` keeps the standalone
+> adapter + registry for trustless deployments. Same `IERC8056PairWrapper`
+> interface in both; see [TOKEN_SIDE_WRAPPER](docs/TOKEN_SIDE_WRAPPER.md).
+
 ## Why this exists
 
 ERC-8056 adjusts a single UI multiplier, so the **reason** for a change is
