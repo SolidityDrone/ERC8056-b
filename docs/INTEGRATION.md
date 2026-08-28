@@ -101,6 +101,14 @@ list them on its auction or forward them to a vault.
 | `windowBackingOf(start, target)` | **truthful** raw backing of one window: pre-maturity (nonce < target) solo redemptions are gated so each pair holds equal capital/yield amounts and only the combined `unwrap` is exercisable at 1:1 — backing = `min(capitalSupplyOf, yieldSupplyOf)`; post-maturity it is frozen at `capitalSupplyOf * capitalShare + yieldSupplyOf * coupon`. 0 for a nonexistent window |
 | `rawLockedOf(start, target)` | **DEPRECATED** — returns the window's outstanding capital supply, which diverges from raw backing after any solo `unwrapYield`. Use `windowBackingOf` instead |
 
+> **Return values.** All three redemption functions return the exact raw
+> amount released on-chain, in-transaction — identical to the corresponding
+> `previewUnwrap*` figure and to the raw amount carried in the emitted event
+> (`Unwrapped`/`UnwrapYield`/`UnwrapCapital`). No balance-delta reads or event
+> parsing needed. This is selector-compatible with earlier deployments (return
+> types do not affect function selectors): existing callers keep working, and
+> the events remain the indexing source.
+
 Both solo redemption functions revert `Locked` while `currentNonce() < target`.
 `unwrap` is unconditional — it is the safe exit for any window.
 

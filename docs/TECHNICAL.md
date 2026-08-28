@@ -207,11 +207,20 @@ The estimate is as good as the issuer's dividend cadence — and it can never
 
 ### 2.6 Redemption summary
 
-| Path | When | Payout |
-|------|------|--------|
-| `unwrap` (both legs) | anytime | exactly `amount` |
-| `unwrapYield` | `getClassNonce(MultiplierClass.Yield) >= target` | `amount × coupon` |
-| `unwrapCapital` | `getClassNonce(MultiplierClass.Yield) >= target` | `amount × (1 - coupon)` |
+| Path | When | Payout | Returns |
+|------|------|--------|---------|
+| `unwrap` (both legs) | anytime | exactly `amount` | `amount` |
+| `unwrapYield` | `getClassNonce(MultiplierClass.Yield) >= target` | `amount × coupon` | `amount × coupon` |
+| `unwrapCapital` | `getClassNonce(MultiplierClass.Yield) >= target` | `amount × (1 - coupon)` | `amount × (1 - coupon)` |
+
+Every redemption function **returns the exact raw amount released** — the same
+figure carried in the corresponding event (`Unwrapped`, `UnwrapYield`,
+`UnwrapCapital`) and guaranteed to equal the matching `previewUnwrap*` call
+immediately before. Callers therefore get on-chain, in-transaction access to
+the per-leg raw amounts without reading balance deltas or parsing events; the
+events remain for indexers. Adding return values to these functions is
+selector-compatible: return types do not affect function selectors, so
+existing callers and calldata are unaffected.
 
 Because `coupon + share = 1`, every pair's total claim equals its deposit, so a
 **single shared raw vault stays solvent by construction**: total claims never
