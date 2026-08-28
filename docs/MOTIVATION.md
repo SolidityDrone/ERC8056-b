@@ -1,6 +1,6 @@
 # MOTIVATION
 
-Why an ERC-8056 improvement? Because ERC-8056 as written cannot support
+Why extend ERC-8056? Because ERC-8056 as written cannot support
 principal/yield decomposition, and RWA protocols (lending, options, auctions)
 urgently need it.
 
@@ -73,7 +73,7 @@ issuer-driven multiplier workflow and one-way consumption of it — but the
 single scalar gives oracle consumers no way to attribute changes to yield vs.
 supply, which is precisely what this extension unlocks.
 
-## The improvement in one sentence
+## The proposal in one sentence
 
 Decompose the multiplier into **named scaling classes** (`Supply`, `Yield`,
 `Other`) with a **per-class checkpoint history**, so the reason for every

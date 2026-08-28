@@ -1,6 +1,6 @@
 # TECHNICAL SPEC
 
-This document is the full technical treatment of the ERC-8056 improvement:
+This document is the full technical treatment of the ERC-8056 extension:
 (1) the class-decomposed extension and what it solves, (2) the nonce-based
 expiry mechanics and why they beat time-based expiry, and (3) the protocol
 use cases the design enables.

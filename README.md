@@ -1,4 +1,4 @@
-# ERC-8056 Improvement: Class-Decomposed UI Scaling & Capital/Yield Wrapping
+# ERC-8056 Scaling Classes — Class-Decomposed UI Scaling & Capital/Yield Wrapping
 
 > **⚠️ Disclaimer — reference work, not production code.**
 > This repository is a *demonstration*: it exists to show ERC-8056 implementers
@@ -8,10 +8,10 @@
 > Treat it as a reference for design discussion and as a starting point for
 > your own implementation — not as a ready-to-ship contract.
 
-A Foundry (Solidity 0.8.24) reference implementation of an **ERC-8056
-improvement** that decomposes UI scaling into named classes and uses that
-decomposition to split an RWA token into **Capital** and **Yield** ERC-20 legs
-with nonce-based (event-based) expiration.
+A Foundry (Solidity 0.8.24) reference implementation that extends
+**ERC-8056** with class-decomposed UI scaling and uses that decomposition to
+split an RWA token into **Capital** and **Yield** ERC-20 legs with
+nonce-based (event-based) expiration.
 
 - [`ERC8056`](src/ERC8056.sol) — the base ERC-8056 reference implementation (single composite multiplier).
 - [`ERC8056Composite`](src/ERC8056Composite.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and a per-class checkpoint history that also serves as the yield-event log.
@@ -65,8 +65,8 @@ curl -L https://foundry.paradigm.xyz | bash
 foundryup
 
 # Clone and build
-git clone --recurse-submodules https://github.com/SolidityDrone/ERC8056-b.git
-cd ERC8056-b
+git clone --recurse-submodules https://github.com/SolidityDrone/erc-8056-scaling-classes.git
+cd erc-8056-scaling-classes
 forge build
 ```
 

@@ -212,7 +212,7 @@ window.
   (the legs' `minter` is the token address). Legs inherit the token's 18
   decimals, so leg amounts line up 1:1 with raw units.
 - **One EIP, one contract.** The embedded wrapper is an optional extension of
-  the same ERC-8056 improvement: a compliant issuer may ship the composite
+  ERC-8056: a compliant issuer may ship the composite
   without it (`supportsInterface` answers `wrapper = false`), and vanilla
   `ERC8056` remains the spec-compatible base layout.
 - **Pair creation is permissionless.** Anyone can create a new window with a
