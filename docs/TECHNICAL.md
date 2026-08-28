@@ -97,7 +97,7 @@ ERC-20-interoperable use.
    contract, deployed twice per window) against the extension's yield
    history. Clean separation, keeps the base token minimal, and lets *any*
    ERC-8056-compatible issuer opt in without changing their token.
-   Shipped on `main`; not part of this branch.
+   Archived on the `legacy/standalone-wrapper-registry` branch.
 2. **In-ERC integration.** The wrapping is folded directly into the token —
    [`ERC8056CompositePairWrapper`](../src/token-side/ERC8056CompositePairWrapper.sol)
    is the composite AND the Capital/Yield factory in one contract, advertised
@@ -107,7 +107,8 @@ ERC-20-interoperable use.
 
 This branch ships the in-ERC form (option 2) as the primary integration — see
 [INTEGRATION.md](INTEGRATION.md). The standalone form (option 1) remains on
-`main` for trustless, multi-issuer deployments. For a proposal, the
+the `legacy/standalone-wrapper-registry` branch for trustless, multi-issuer
+deployments. For a proposal, the
 distinction matters: the extension defines the *standard* interface, and the
 splitter is an *optional consumer* any compliant token can adopt — in-ERC when
 the issuer is the authority, standalone when the wrapper deployer is a

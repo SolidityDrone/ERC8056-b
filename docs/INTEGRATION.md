@@ -12,8 +12,9 @@ contract. The stable surface protocols code against is
 implemented by the token and advertised through ERC-165 — there is no separate
 wrapper contract and no registry.
 
-> A standalone adapter + registry variant with the same interface exists on
-> `main` for trustless, multi-issuer deployments (not part of this branch).
+> A standalone adapter + registry variant with the same interface — the earlier,
+> pre-in-token implementation — is archived on the
+> `legacy/standalone-wrapper-registry` branch for trustless, multi-issuer deployments.
 
 ---
 
