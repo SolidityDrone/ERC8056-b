@@ -167,6 +167,30 @@ contract ERC8056CompositePairWrapperTest is ScalingTestBase {
         assertEq(token.balanceOf(address(token)), RAW_STAKE);
     }
 
+    //==============================================================================//
+    // Maturity (isMatured)                                                          //
+    //==============================================================================//
+    function test_isMatured_falseWhileLocked_trueAtTargetNonce() public {
+        (uint256 s, uint256 t) = _wrapLocked(alice, RAW_STAKE, 2);
+        assertFalse(token.isMatured(s, t));
+
+        _advanceNonce(1 days); // nonce 1
+        assertFalse(token.isMatured(s, t));
+
+        _advanceNonce(1 days); // nonce 2 == target
+        assertTrue(token.isMatured(s, t));
+    }
+
+    function test_isMatured_degenerateWindow_maturedImmediately() public {
+        (uint256 s, uint256 t) = _wrap(alice, RAW_STAKE); // lockNonces = 0
+        assertTrue(token.isMatured(s, t));
+    }
+
+    function test_isMatured_revertsForUnknownWindow() public {
+        vm.expectRevert(IERC8056PairWrapper.PairNotFound.selector);
+        token.isMatured(9, 10);
+    }
+
     function test_wrap_capturesStartNonce() public {
         _advanceNonce(1 days); // nonce 1
         (uint256 start, uint256 target) = _wrapLocked(alice, RAW_STAKE, 5);

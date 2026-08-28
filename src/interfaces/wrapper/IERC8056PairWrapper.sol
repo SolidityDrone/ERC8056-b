@@ -116,6 +116,12 @@ interface IERC8056PairWrapper {
     ///      never-created window.
     function couponOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
 
+    /// @dev True once window (start, target) has reached nonce maturity — i.e.
+    ///      `getClassNonce(MultiplierClass.Yield) >= targetNonce` — meaning solo
+    ///      redemptions ({unwrapYield}/{unwrapCapital}) are unlocked and the
+    ///      coupon is frozen. Reverts `PairNotFound` for a never-created window.
+    function isMatured(uint256 startNonce, uint256 targetNonce) external view returns (bool);
+
     /// @dev Frozen capital share of window (start, target): 1e18 - coupon.
     function capitalShareOf(uint256 startNonce, uint256 targetNonce) external view returns (uint256);
 

@@ -151,7 +151,7 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 
 | Interface | Methods |
 |-----------|---------|
-| `IERC8056PairWrapper` | `wrap` (self-escrow), `unwrap`/`unwrapYield`/`unwrapCapital`, `pairs`/`capitalToken`/`yieldToken`, `couponOf`/`capitalShareOf`, previews, per-window supplies, `currentNonce`, `windowBackingOf`, `rawLocked()`/`rawLockedOf` (deprecated) |
+| `IERC8056PairWrapper` | `wrap` (self-escrow), `unwrap`/`unwrapYield`/`unwrapCapital`, `isMatured(start,target)`, `pairs`/`capitalToken`/`yieldToken`, `couponOf`/`capitalShareOf`, previews, per-window supplies, `currentNonce`, `windowBackingOf`, `rawLocked()`/`rawLockedOf` (deprecated) |
 
 Implemented by the token itself via [`ERC8056CompositePairWrapper`](src/token-side/ERC8056CompositePairWrapper.sol)
 and advertised through ERC-165 (`0xf27375cb`) alongside `IERC8056Composite`

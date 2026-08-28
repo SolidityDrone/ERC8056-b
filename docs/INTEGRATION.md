@@ -96,6 +96,7 @@ list them on its auction or forward them to a vault.
 | `unwrap(amount, start, target)` | burn **both** legs, receive exactly `amount` — anytime |
 | `unwrapYield(amount, start, target)` | burn `amount` yield leg for `amount * coupon` |
 | `unwrapCapital(amount, start, target)` | burn `amount` capital leg for `amount * (1 - coupon)` |
+| `isMatured(start, target)` | true once the window reached nonce maturity (`currentNonce() >= target`) — solo redemptions unlocked, coupon frozen. Reverts `PairNotFound` for a never-created window |
 | `rawLocked()` | total raw escrowed across all windows — always exactly `token.balanceOf(address(token))` |
 | `windowBackingOf(start, target)` | **truthful** raw backing of one window: pre-maturity (nonce < target) solo redemptions are gated so each pair holds equal capital/yield amounts and only the combined `unwrap` is exercisable at 1:1 — backing = `min(capitalSupplyOf, yieldSupplyOf)`; post-maturity it is frozen at `capitalSupplyOf * capitalShare + yieldSupplyOf * coupon`. 0 for a nonexistent window |
 | `rawLockedOf(start, target)` | **DEPRECATED** — returns the window's outstanding capital supply, which diverges from raw backing after any solo `unwrapYield`. Use `windowBackingOf` instead |

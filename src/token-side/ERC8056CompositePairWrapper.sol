@@ -265,6 +265,12 @@ contract ERC8056CompositePairWrapper is ERC8056Composite, IERC8056PairWrapper, R
         return _couponOf(startNonce, targetNonce);
     }
 
+    /// @dev True once the window reached nonce maturity; solo redemptions unlock.
+    function isMatured(uint256 startNonce, uint256 targetNonce) public view override returns (bool) {
+        _requirePair(startNonce, targetNonce);
+        return getClassNonce(MultiplierClass.Yield) >= targetNonce;
+    }
+
     /// @dev Frozen capital share of window (start, target): 1e18 - coupon.
     function capitalShareOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
         return UIScalingMath.MULTIPLIER_DECIMALS - couponOf(startNonce, targetNonce);

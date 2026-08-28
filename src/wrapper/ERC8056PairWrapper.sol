@@ -291,6 +291,12 @@ contract ERC8056PairWrapper is IERC8056PairWrapper, ReentrancyGuard, ERC165 {
         return _couponOf(startNonce, targetNonce);
     }
 
+    /// @dev True once the window reached nonce maturity; solo redemptions unlock.
+    function isMatured(uint256 startNonce, uint256 targetNonce) public view override returns (bool) {
+        _requirePair(startNonce, targetNonce);
+        return scaledUnderlying.getClassNonce(MultiplierClass.Yield) >= targetNonce;
+    }
+
     /// @dev Frozen capital share of window (start, target): 1e18 - coupon.
     function capitalShareOf(uint256 startNonce, uint256 targetNonce) public view override returns (uint256) {
         return UIScalingMath.MULTIPLIER_DECIMALS - couponOf(startNonce, targetNonce);
