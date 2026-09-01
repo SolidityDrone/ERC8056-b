@@ -85,7 +85,7 @@ The Supply class keeps split/re-denomination effects visible while the Yield
 portion — the only part that represents *accreted value* rather than a change
 of denomination — is elided or isolated. That attribution is exactly what the
 scalar cannot provide and what
-[TECHNICAL §3.1.1](TECHNICAL.md) uses for per-leg pricing of the Capital/Yield
+[TECHNICAL §3.1.1](2-TECHNICAL.md) uses for per-leg pricing of the Capital/Yield
 wrapper.
 
 ## 3. Integration checklist for oracle consumers

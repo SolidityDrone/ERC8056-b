@@ -122,7 +122,7 @@ nonces, a delayed dividend simply delays maturity ("the next 2 dividends,
 whenever they land") and nobody is penalized; payouts are frozen by *which
 events have happened*, not by when the clock said they should. The full
 treatment — including the failure mode this avoids — is in
-[TECHNICAL.md](TECHNICAL.md#part-2--expiry-and-nonce-based-locks).
+[2-TECHNICAL.md](2-TECHNICAL.md#part-2--expiry-and-nonce-based-locks).
 
 ---
 
@@ -200,7 +200,7 @@ For USD valuation of the underlying tokenized stock, Chainlink's
 protocols can read the feed derivatively (token USD as-is) or as a real-world
 asset by eliding the multiplier, and with the composite, by eliding only the
 Yield factor. Formulas per valuation mode:
-[CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md](CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md).
+[4-CHAINLINK-VALUATION.md](4-CHAINLINK-VALUATION.md).
 
 | Member | Meaning |
 |--------|---------|

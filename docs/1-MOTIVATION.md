@@ -27,9 +27,9 @@ dates slip, issuers delay distributions, announcements land late — so a
 calendar expiry can fire before the yield it was supposed to price and destroy
 a legitimate claim. Committing to "the next N dividends, whenever they land"
 makes a late distribution delay maturity instead of destroying it. The full
-reasoning is in [TECHNICAL.md](TECHNICAL.md#part-2--expiry-and-nonce-based-locks),
+reasoning is in [2-TECHNICAL.md](2-TECHNICAL.md#part-2--expiry-and-nonce-based-locks),
 and a worked numeric example of the split and redemption mechanics is in
-[INTEGRATION.md](INTEGRATION.md).
+[3-INTEGRATION.md](3-INTEGRATION.md).
 
 ## The core limitation of ERC-8056
 
@@ -153,10 +153,10 @@ pure re-denomination is finally knowable on-chain.
 
 The full integration treatment — formulas for both valuation modes, the
 corporate-action pause workflow, and an oracle-consumer checklist — lives in
-[CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md](CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md).
+[4-CHAINLINK-VALUATION.md](4-CHAINLINK-VALUATION.md).
 
 The mechanics — how classes, checkpoint history, and nonce-based expiry produce
-a deterministic, solvent split — are in [TECHNICAL.md](TECHNICAL.md). The split
+a deterministic, solvent split — are in [2-TECHNICAL.md](2-TECHNICAL.md). The split
 ships inside the token itself (`ERC8056CompositePairWrapper` — ERC-165
 discoverable, self-escrow `wrap`, no registry); the consumer guide for
-protocols building on the Capital/Yield split is [INTEGRATION.md](INTEGRATION.md).
+protocols building on the Capital/Yield split is [3-INTEGRATION.md](3-INTEGRATION.md).

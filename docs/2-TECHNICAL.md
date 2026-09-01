@@ -106,7 +106,7 @@ ERC-20-interoperable use.
    ceremony; suited to centralized issuers that already own the multiplier.
 
 This implementation ships the in-ERC form (option 2) as the primary integration — see
-[INTEGRATION.md](INTEGRATION.md). The standalone form (option 1) remains on
+[3-INTEGRATION.md](3-INTEGRATION.md). The standalone form (option 1) remains on
 the `legacy/standalone-wrapper-registry` branch for trustless, multi-issuer
 deployments. For a proposal, the
 distinction matters: the extension defines the *standard* interface, and the
@@ -257,7 +257,7 @@ real-world asset by eliding the multiplier — and with the composite's class
 decomposition, by eliding **only** the Yield factor, keeping the split-adjusted
 real-world denomination intact. Full formulas, the corporate-action pause
 workflow, and an oracle-consumer checklist:
-[CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md](CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md).
+[4-CHAINLINK-VALUATION.md](4-CHAINLINK-VALUATION.md).
 
 ### 3.2 Options
 
@@ -303,7 +303,7 @@ is sound and composable.
 4. Optional Capital/Yield surface: deploy the token as
    `ERC8056CompositePairWrapper` so the composite itself implements
    `IERC8056PairWrapper` (ERC-165-discoverable, self-escrow `wrap`, no
-   registry — see [INTEGRATION.md](INTEGRATION.md)).
+   registry — see [3-INTEGRATION.md](3-INTEGRATION.md)).
 
 ### 4.2 Upgrading a live vanilla ERC-8056 beacon proxy
 

@@ -15,7 +15,7 @@ nonce-based (event-based) expiration.
 
 - [`ERC8056`](src/ERC8056.sol) — the base ERC-8056 reference implementation (single composite multiplier).
 - [`ERC8056Composite`](src/ERC8056Composite.sol) — the extension: class-decomposed scaling (`Supply` / `Yield` / `Other`), scheduled pending updates, and a per-class checkpoint history that also serves as the yield-event log.
-- [`ERC8056CompositePairWrapper`](src/ERC8056CompositePairWrapper.sol) — **the wrapper, integrated in the token**: the composite is the Capital/Yield factory itself. `wrap` self-escrows (no approval), discovery is ERC-165 (`IERC8056PairWrapper`, `0x8a8c95d4`), and there is no registry — for centralized issuers that already own the multiplier. See [INTEGRATION](docs/INTEGRATION.md).
+- [`ERC8056CompositePairWrapper`](src/ERC8056CompositePairWrapper.sol) — **the wrapper, integrated in the token**: the composite is the Capital/Yield factory itself. `wrap` self-escrows (no approval), discovery is ERC-165 (`IERC8056PairWrapper`, `0x8a8c95d4`), and there is no registry — for centralized issuers that already own the multiplier. See [INTEGRATION](docs/3-INTEGRATION.md).
 - A standalone adapter + registry variant with the same `IERC8056PairWrapper` interface — the earlier, pre-in-token implementation — is archived on the [`legacy/standalone-wrapper-registry`](../../tree/legacy/standalone-wrapper-registry) branch for trustless, multi-issuer deployments.
 
 ## Why this exists
@@ -52,7 +52,7 @@ This repo delivers **two benefits**, one per cost:
    real-world representation of the asset, not just its altered stock-token
    price — without waiting for anyone to publish a second oracle.
 
-See [MOTIVATION](docs/MOTIVATION.md) and [TECHNICAL](docs/TECHNICAL.md).
+See [MOTIVATION](docs/1-MOTIVATION.md) and [TECHNICAL](docs/2-TECHNICAL.md).
 
 > **Production context:** this vanilla model is live today — Chainlink's
 > [Robinhood Tokenized Equity feeds](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood)
@@ -61,7 +61,24 @@ See [MOTIVATION](docs/MOTIVATION.md) and [TECHNICAL](docs/TECHNICAL.md).
 > adds the class attribution those feeds' consumers cannot get from a scalar.
 >
 > Both valuation modes (derivative vs. real-world) and the formulas:
-> [CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md](docs/CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md).
+> [CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md](docs/4-CHAINLINK-VALUATION.md).
+
+## Documentation — read in this order
+
+**The code alone will not explain this proposal** — the design rationale, the
+mechanics, and the integration model live in the docs. Read them in order:
+
+1. **[1-MOTIVATION](docs/1-MOTIVATION.md)** — why the single-scalar multiplier
+   is not enough, and the two benefits the classes unlock (Capital/Yield
+   splitting; derivative vs digital-twin valuation).
+2. **[2-TECHNICAL](docs/2-TECHNICAL.md)** — the full technical treatment:
+   class semantics, checkpoint history, nonce-based expiry, use cases,
+   migration guide, and the itemized deviations from vanilla ERC-8056.
+3. **[3-INTEGRATION](docs/3-INTEGRATION.md)** — the consumer guide: how to
+   discover, split, price, and redeem; includes a worked numeric example.
+4. **[4-CHAINLINK-VALUATION](docs/4-CHAINLINK-VALUATION.md)** — oracle
+   integration: how the Chainlink tokenized-equity feed interacts with the
+   classes, and the derivative vs digital-twin valuation formulas.
 
 ## Quickstart
 
@@ -125,10 +142,10 @@ of 100 handler calls (~70 s) and is configured in `foundry.toml`.
 │       └── UIScalingMath.sol           # canonical composite math
 ├── test/                              # unit, fuzz, and invariant suites
 ├── docs/
-│   ├── MOTIVATION.md                  # why this proposal exists
-│   ├── TECHNICAL.md                   # extension spec, expiry, use cases
-│   ├── INTEGRATION.md                 # consumer guide: the in-token Capital/Yield split
-│   └── CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md  # oracle/valuation duality
+│   ├── 1-MOTIVATION.md                # 1st read: why this proposal exists
+│   ├── 2-TECHNICAL.md                 # 2nd read: spec, expiry mechanics, use cases, deviations
+│   ├── 3-INTEGRATION.md               # 3rd read: consumer guide for the Capital/Yield split
+│   └── 4-CHAINLINK-VALUATION.md       # 4th read: oracle integration & valuation duality
 ```
 
 ## Scaling classes
@@ -155,7 +172,7 @@ uiMultiplier = Supply × Yield × Other   (each 1e18 fixed point)
 
 > **Note:** the composite implementation overrides some base reads with
 > composite semantics — see the
-> [TECHNICAL deviations appendix](docs/TECHNICAL.md#appendix--deviations-from-vanilla-erc-8056)
+> [TECHNICAL deviations appendix](docs/2-TECHNICAL.md#appendix--deviations-from-vanilla-erc-8056)
 > and [Retrocompatibility](#retrocompatibility-with-existing-8056-integrations).
 
 ### Extension (class decomposition)
@@ -176,7 +193,7 @@ Implemented by the token itself via [`ERC8056CompositePairWrapper`](src/ERC8056C
 and advertised through ERC-165 (`0x8a8c95d4`) alongside `IERC8056Composite`
 (`0xf9712df3`) — a vanilla-8056 token without the split answers
 `composite = true, wrapper = false`.
-See [INTEGRATION](docs/INTEGRATION.md) for the full consumer guide.
+See [INTEGRATION](docs/3-INTEGRATION.md) for the full consumer guide.
 
 ## Redemption model
 
@@ -224,7 +241,7 @@ composite:
 
 The complete itemized list of semantic deviations (8 items, with vanilla vs.
 this implementation behavior) is in the
-[TECHNICAL appendix](docs/TECHNICAL.md#appendix--deviations-from-vanilla-erc-8056).
+[TECHNICAL appendix](docs/2-TECHNICAL.md#appendix--deviations-from-vanilla-erc-8056).
 
 ## License
 

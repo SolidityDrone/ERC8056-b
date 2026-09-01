@@ -3,7 +3,7 @@ cache/
 broadcast/
 test/Scratch.t.sol
 docs/*
-!docs/MOTIVATION.md
-!docs/TECHNICAL.md
-!docs/INTEGRATION.md
-!docs/CHAINLINK_TOKENIZED_STOCK_EQUITY_INTEGRATION.md
+!docs/1-MOTIVATION.md
+!docs/2-TECHNICAL.md
+!docs/3-INTEGRATION.md
+!docs/4-CHAINLINK-VALUATION.md
